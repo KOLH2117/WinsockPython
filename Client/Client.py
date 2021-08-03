@@ -7,10 +7,13 @@ from tkinter import messagebox,ttk
 from PIL import ImageTk,Image
 from datetime import datetime
 import os
+import sys
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.ticker as mtick 
+from ctypes import windll
  
 HEADER = 64
 FORMAT = 'utf-8'
@@ -20,13 +23,16 @@ WRONG_PASSWORD = "Login Failed! Username or password is incorrect"
 NOT_REGISTERED = "User is not registered!"
 ALREADY_LOGGED = "Account has already logged in!"
 
-#Backend
+CLIENT = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+
 def server_crash():
     reconnect =messagebox.askquestion("Status","Server is disconnect.\nReconnect to server?")
     if reconnect == 0:
-        on_closing()
+        root.destroy()
+        sys.exit()
     else:
-        client_socket.close()
+        CLIENT.close()
         clear_frame(root)
         input_host()
         
@@ -36,49 +42,27 @@ def send(msg):
     send_length = str(msg_length).encode(FORMAT)
     send_length += b' ' * (HEADER - len(send_length))
     try:
-        client_socket.send(send_length)
-        client_socket.send(message)
+        CLIENT.send(send_length)
+        CLIENT.send(message)
     except socket.error as e:
         raise socket.error(e)
       
 def receive():
-    """Handles receiving of messages."""
     msg = ""
     try:
-        msg_length = client_socket.recv(HEADER).decode(FORMAT)
+        msg_length = CLIENT.recv(HEADER).decode(FORMAT)
     except socket.error:
         raise socket.error
-    except OSError:  # Possibly client has left the chat.
-        raise OSError
     else:
         if msg_length:
-            msg = client_socket.recv(int(msg_length)).decode(FORMAT)
+            msg = CLIENT.recv(int(msg_length)).decode(FORMAT)
             if msg == DISCONNECT_MESSAGE:
                 raise socket.error(DISCONNECT_MESSAGE)  
         return msg
 
-def on_closing():
-    try:
-        status = client_socket.fileno()
-    except NameError:
-        root.destroy()
-    else:
-        if status != -1:
-            try:
-                send(DISCONNECT_MESSAGE)
-            finally: 
-                client_socket.close()
-                root.destroy()
-        else:
-            root.destroy()
-
 def clear_frame(frame):
     for widget in frame.winfo_children():
         widget.destroy()
-
-def check_password(password):
-    return True 
-
 
 def start_query_from_server(name,date,my_tree):
     if my_tree.get_children():
@@ -114,21 +98,36 @@ def start_query_from_server(name,date,my_tree):
                     messagebox.showinfo("Status","Success")
         elif msg == "NOT FOUND":
             messagebox.showerror("Status",msg)
-        
+
+def check_input(username,password, re_enter_password = ""):
+    if password == "" or username == "":
+        messagebox.showwarning("Warning","Please enter both of field")
+        return False
+    msg = "Valid Password"
+    if len(password) < 8:
+        msg = "Password must be at least 8 characters contain"
+    elif re.search('[0-9]',password) is None:
+        msg = "Make sure your password has a number in it"
+    elif re.search('[A-Z]',password) is None:
+        msg = "Make sure your password has a capital letter in it"
+    
+    if re_enter_password:
+        if password != re_enter_password:
+            messagebox.showwarning("Warning","Password does not match")
+            return False
+    if msg == "Valid Password":
+        return True       
+    else:
+        messagebox.showwarning("Invalid Password",msg)
+        return False  
+
 def register(username, password,re_enter_password):   
     if password == "" or username == "" or re_enter_password == "":
         messagebox.showwarning("Warning","Please enter all of fields")
         return
-    else:
-        if len(password) < 8:
-            messagebox.showwarning("Password","Password must be at least 8 characters contain")
-            return
-        else:
-            if re_enter_password != password:
-                messagebox.showwarning("Warning","Password does not match")
-                return
-            #check_password(password)
-    
+    elif check_input(username, password,re_enter_password) == False:
+        return
+   
     try:
         send("Register")
         send(username)
@@ -144,15 +143,8 @@ def register(username, password,re_enter_password):
             login_form()
 
 def login(username, password):
-    if password == "" or username == "":
-        messagebox.showwarning("Warning","Please enter both of field")
+    if check_input(username, password) == False:
         return
-    else:
-        if len(password) < 8:
-            messagebox.showwarning("Password","Password must be at least 8 characters contain")
-            return
-        else:
-            check_password(password)
             
     try:
         send("Login")
@@ -161,30 +153,25 @@ def login(username, password):
     except socket.error as e:
         server_crash()
     else:
-        try:
-            login_msg = receive()
-        except socket.error:
-            server_crash()
-        else:
-            if login_msg == LOGIN_MSG_SUCCESS:
-                messagebox.showinfo("Status",LOGIN_MSG_SUCCESS)
-                query_gold_form()
+        login_msg = receive()
+       
+        if login_msg == LOGIN_MSG_SUCCESS:
+            messagebox.showinfo("Status",LOGIN_MSG_SUCCESS)
+            query_gold_form()
+        elif login_msg == ALREADY_LOGGED:
+            messagebox.showwarning("Status",ALREADY_LOGGED + "\nUse another account")
+        elif login_msg == WRONG_PASSWORD:
+            messagebox.showerror("Status" , WRONG_PASSWORD)
+        elif login_msg == NOT_REGISTERED:
+            register = messagebox.showwarning("Account is not registered" , "Your account is not registered!" )
+            register = messagebox.askyesno("Not registered", "Register Now???")
+            if register == 0:
                 return
-            elif login_msg == ALREADY_LOGGED:
-                messagebox.showwarning("Status",ALREADY_LOGGED + "\nUse another account")
-            
-            elif login_msg == WRONG_PASSWORD:
-                messagebox.showerror("Status" , WRONG_PASSWORD)
-            elif login_msg == NOT_REGISTERED:
-                register = messagebox.showwarning("Account is not registered" , "Your account is not registered!" )
-                register = messagebox.askyesno("Not registered", "Register Now???")
-                if register == 0:
-                    return
-                else:
-                    register_form() 
+            else:
+                register_form() 
       
 def start_connections(HOST_IP):     
-    global HOST,PORT,ADDR,client_socket
+    global HOST,PORT,ADDR,CLIENT
     if HOST_IP == "":
         messagebox.showwarning("Warning","Please input the field")
         return
@@ -202,35 +189,73 @@ def start_connections(HOST_IP):
             except ValueError:
                 messagebox.showerror("Error","Not a IP-v4 prefix")
                 return 
+            
     HOST = HOST_IP
     PORT = 5050
     ADDR = (HOST,PORT)
-    
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
    
     try:
-        client_socket.connect(ADDR)
+        CLIENT.connect(ADDR)
     except socket.error as e:
         messagebox.showerror("Status", "Can't connect to server")
     else:
         messagebox.showinfo("Status", f"Connected to {HOST}")
         login_form()
 
-#GUI of client        
-def openNewWindow():
-    # Toplevel object which will 
-    # be treated as a new window
-    newWindow = tk.Toplevel(root)
-    
-    # sets the title of the
-    # Toplevel widget
-    newWindow.title("New Window")
+"""GUI của client"""   
 
+class Tk(tk.Tk):
+    lastClickX = 0
+    lastClickY = 0  
+    def overrideredirect(self, boolean=None):
+        tk.Tk.overrideredirect(self, boolean)
+        GWL_EXSTYLE=-20
+        WS_EX_APPWINDOW=0x00040000
+        WS_EX_TOOLWINDOW=0x00000080
+        if boolean:
+            hwnd = windll.user32.GetParent(self.winfo_id())
+            style = windll.user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+            style = style & ~WS_EX_TOOLWINDOW
+            style = style | WS_EX_APPWINDOW
+            res = windll.user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style)
+        self.wm_withdraw()
+        self.wm_deiconify()
+    def move_window(self):
+        def SaveLastClickPos(event):
+            global lastClickX, lastClickY
+            lastClickX = event.x
+            lastClickY = event.y
+
+
+        def Dragging(event):
+            x, y = event.x - lastClickX + root.winfo_x(), event.y - lastClickY + root.winfo_y()
+            root.geometry("+%s+%s" % (x , y))
+            
+        self.bind('<Button-1>', SaveLastClickPos)
+        self.bind('<B1-Motion>', Dragging)
+    
+"""Hàm để thoát chương trình"""
+def exit():
+    ask = messagebox.askyesno("Status","Exit Now?",parent = root)
+    if ask == 0:
+        return
+    else:
+        try:
+            send(DISCONNECT_MESSAGE)
+        finally: 
+            CLIENT.close()
+            root.destroy()
+            sys.exit()
+
+"""Tạo của sổ mới"""
+def openNewWindow():
+    newWindow = tk.Toplevel(root)
+    newWindow.title("New Window")
     return newWindow
 
+"""Mở đồ thị giá vàng"""
 def open_chart(date,my_tree,search_button):
     s = ttk.Style()
-    #s.theme_use('clam')
     TROUGH_COLOR = 'white'
     BAR_COLOR = '#3A6FF7'
     s.configure("bar.Horizontal.TProgressbar", 
@@ -344,8 +369,8 @@ def open_chart(date,my_tree,search_button):
         plt.legend(handles=lines,bbox_to_anchor=(1.05, 1), loc='upper left')
         stop()
         plt.show()
-        
-  
+
+"""Form để tra giá vàng"""        
 def query_gold_form():
     clear_frame(root)
     
@@ -354,6 +379,10 @@ def query_gold_form():
 
     root.geometry(f"900x600+{int(x)}+{int(y)}")
     root.configure(bg = "#3a6ff7")
+    
+    Tk.overrideredirect(root,1)
+    Tk.move_window(root)
+    
     canvas = tk.Canvas(
         root,
         bg = "#3a6ff7",
@@ -438,24 +467,25 @@ def query_gold_form():
     
     style = ttk.Style()
     style.theme_use('clam')
-    #Config table style
+    """Chỉnh sửa màu cho bảng"""
     style.configure("Treeview",
                     background='#E9E9E9',
                     foreground= 'black',
                     rowheight = 25, 
                     fieldbackground='#E9E9E9',
                     )
-    #Change the select record color
+    
+    """Thay đổi màu khi người dùng chọn"""
     style.map('Treeview',background = [('selected','#0E74EC')])
     
     
-    #Format columns
+    """Định dạng cột"""
     my_tree.column("#0",width = 0, stretch =tk.NO)
     my_tree.column("Đơn vị: đồng/lượng",anchor = tk.W,width = 140)
     my_tree.column("Giá mua",anchor = tk.W,width = 80)
     my_tree.column("Giá bán",anchor = tk.W,width = 80)
     
-    #Create headings
+    """Tạo heading của bảng"""
     my_tree.heading("#0",text = "",anchor = tk.W)
     my_tree.heading("Đơn vị: đồng/lượng",text = "Đơn vị: đồng/lượng",anchor = tk.W)
     my_tree.heading("Giá mua",text = "Giá mua",anchor = tk.W)
@@ -468,19 +498,39 @@ def query_gold_form():
     )
     
     my_tree.bind("<Double-1>",lambda event : open_chart(date_charts,my_tree,b0))
+    exit_button = tk.Button(
+    image = exit_button_img,
+    borderwidth = 0,
+    highlightthickness = 0,
+    command = exit,
+    relief = "flat")
 
+    exit_button.place(
+        x = 826, y = 0,
+        width = 24,
+        height = 24)
+
+"""Ẩn password"""
 def hide_pass(widget):
     widget.config(show = "*") 
 
+"""Hiện password"""
 def show_pass(widget):
     widget.config(show = "")
-  
+
+"""Form để đăng ký"""  
 def register_form():
     clear_frame(root)
+    
     x = (SCREEN_WIDTH/2) - 300
     y = (SCREEN_HEIGHT/2) - (300/2)
+    
     root.geometry(f"600x300+{int(x)}+{int(y)}")
     root.configure(bg = "#3a7ff6")
+    
+    Tk.overrideredirect(root,1)
+    Tk.move_window(root)
+    
     canvas = tk.Canvas(
         root,
         bg = "#3a7ff6",
@@ -490,7 +540,6 @@ def register_form():
         highlightthickness = 0,
         relief = "ridge")
     canvas.place(x = 0, y = 0)
-
 
     canvas.create_rectangle(
         100, 0, 100+400, 0+300,
@@ -614,12 +663,31 @@ def register_form():
         width = 47,
         height = 50)
     
+    exit_button = tk.Button(
+    image = exit_button_img,
+    borderwidth = 0,
+    highlightthickness = 0,
+    command = exit,
+    relief = "flat")
+
+    exit_button.place(
+        x = 476, y = 0,
+        width = 24,
+        height = 24)
+    
+"""Form để đăng nhập"""    
 def login_form():
     clear_frame(root)
+    
     x = (SCREEN_WIDTH/2) - 300
     y = (SCREEN_HEIGHT/2) - (300/2)
+    
     root.geometry(f"600x300+{int(x)}+{int(y)}")
     root.configure(bg = "#3a7ff6")
+    
+    Tk.overrideredirect(root,1)
+    Tk.move_window(root)
+    
     canvas = tk.Canvas(
         root,
         bg = "#3a7ff6",
@@ -726,12 +794,34 @@ def login_form():
         x = 339, y = 215,
         width = 78,
         height = 13)
- 
+    
+    exit_button = tk.Button(
+    image = exit_button_img,
+    borderwidth = 0,
+    highlightthickness = 0,
+    command = exit,
+    relief = "flat")
+
+    exit_button.place(
+        x = 476, y = 0,
+        width = 24,
+        height = 24)
+    
+"""Form ban đầu để nhập địa chỉ IP SERVER""" 
 def input_host():
-    x = (SCREEN_WIDTH/2) - 300
+    def input_closing():
+        root.destroy()
+        sys.exit()
+    
+    x = (SCREEN_WIDTH/2) - (600/2)  
     y = (SCREEN_HEIGHT/2) - (300/2)
+    
     root.geometry(f"600x300+{int(x)}+{int(y)}")
     root.configure(bg = "#3a7ff6")
+    
+    Tk.overrideredirect(root,1)
+    Tk.move_window(root)
+    
     canvas = tk.Canvas(
         root,
         bg = "#3a7ff6",
@@ -743,12 +833,12 @@ def input_host():
     canvas.place(x = 0, y = 0)
 
     canvas.create_rectangle(
-        150, 0, 150+300, 0+300,
+        300, 0, 300+300, 0+300,
         fill = "#ffffff",
         outline = "")
 
     entry0_bg = canvas.create_image(
-        299.5, 137.5,
+        449.5, 137.5,
         image = Host_img)
 
     host_input_field = tk.Entry(
@@ -757,29 +847,28 @@ def input_host():
         highlightthickness = 0)
 
     host_input_field.insert(tk.END,"HOST IP")
-    host_input_field.bind("<Button-1>",(lambda event:host_input_field.delete(0,'end')))
+    host_input_field.bind("<Button-1>",(lambda event: host_input_field.delete(0,'end')))
     host_input_field.bind("<Return>", (lambda event : start_connections(host_input_field.get())))
     
     host_input_field.place(
-        x = 230.0-3, y = 115+21,
+        x = 380.0-3, y = 115+21,
         width = 139.0,
         height = 25)
 
     canvas.create_text(
-        234.5, 126.5,
+        384.5, 126.5,
         text = "IP",
         fill = "#000000",
         font = ("Roboto-Bold", int(12.0)))
 
     canvas.create_text(
-        300.5, 50.0,
+        450.5, 50.0,
         text = "NHẬP HOST IP",
         fill = "#000000",
         font = ("Roboto-Bold", int(12.0)))
 
-
     canvas.create_rectangle(
-        278, 61, 278+44, 61+1,
+        428, 61, 428+44, 61+1,
         fill = "#000000",
         outline = "")
 
@@ -791,24 +880,79 @@ def input_host():
         relief = "flat")
 
     b0.place(
-        x = 260, y = 219,
+        x = 410, y = 219,
         width = 80,
         height = 40)
     
+    canvas.create_text(
+        140, 50.0,
+        text = "CHƯƠNG TRÌNH TRA CỨU",
+        fill = "#ffffff",
+        font = ("Roboto-Bold", int(15.0)))
+    
+    canvas.create_text(
+        33, 80,
+        text = "GIÁ",
+        fill = "#ffffff",
+        font = ("Roboto-Bold", int(15.0)))
+    
+    canvas.create_text(
+        85, 80,
+        text = "VÀNG",
+        fill = "#FAFF00",
+        font = ("Roboto-Bold", int(15.0)))
+    
+    label1 = tk.Label(image=Gold_img)
+    label1.image = Gold_img
+    label1.place(x=150, y=90, width= 100,height=100)
+    
+    canvas.create_text(
+        80, 220,
+        text = "Phát triển bởi:",
+        fill = "#ffffff",
+        font = ("Roboto-Bold", int(15.0)))
+    
+    canvas.create_text(
+        142, 250,
+        text = "20127067 - Trần Hồng Quân",
+        fill = "#ffffff",
+        font = ("Roboto-Bold", int(15.0)))
+    canvas.create_text(
+        154, 280,
+        text = "20127665 - Dương Quang Vinh",
+        fill = "#ffffff",
+        font = ("Roboto-Bold", int(15.0)))
+    
+    exit_button = tk.Button(
+    image = exit_button_img,
+    borderwidth = 0,
+    highlightthickness = 0,
+    command = input_closing,
+    relief = "flat")
+
+    exit_button.place(
+        x = 576, y = 0,
+        width = 24,
+        height = 24)
+    
 root = tk.Tk()
 root.title("CLIENT") 
-root.iconbitmap("Images/Client.ico")
 SCREEN_HEIGHT = root.winfo_screenheight()
 SCREEN_WIDTH = root.winfo_screenwidth()
 
-#Get directory of program
-DIR = os.getcwd()
+"""Lấy đường dẫn của chương trình"""
+DIR = os.path.dirname(__file__)
 PATH_IMG = f"{DIR}/Images/"
-x = (SCREEN_WIDTH/2) - 300
-y = (SCREEN_HEIGHT/2) - (300/2)
 
-#List of img program used
+root.iconbitmap(f"{PATH_IMG}Client.ico")
+
+"""Danh sách cái hình ảnh chương trình cần"""
+img = Image.open(f"{PATH_IMG}Gold_img.png")
+img = img.resize((100, 100))
+Gold_img = ImageTk.PhotoImage(img)
+
 Host_img = ImageTk.PhotoImage(file= f"{PATH_IMG}Host_img.png")
+exit_button_img = ImageTk.PhotoImage(file= f"{PATH_IMG}exit_button.png")
 textBox = ImageTk.PhotoImage(file=f"{PATH_IMG}TextBox.png")
 sign_in_img = ImageTk.PhotoImage(file=f"{PATH_IMG}Login_Button.png")
 connect_img = ImageTk.PhotoImage(file=f"{PATH_IMG}Connect_Button.png")
@@ -819,9 +963,6 @@ type_gold_img = ImageTk.PhotoImage(file= f"{PATH_IMG}gold_input.png")
 search_button_img = ImageTk.PhotoImage(file= f"{PATH_IMG}Search_button.png")
 
 root.resizable(False, False)
-root.protocol("WM_DELETE_WINDOW", on_closing)
-
-
 
 if __name__ == "__main__":
     input_host()

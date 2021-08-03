@@ -2,7 +2,6 @@ import re
 import socket
 import threading
 import tkinter as tk
-from tkinter import messagebox
 import sqlite3
 import requests
 from bs4 import BeautifulSoup
@@ -205,7 +204,7 @@ def create_table_to_gold_database(date):
     golds = get_gold_list(date)
     
     
-    with sqlite3.connect(f'Server Database/Golds.db',check_same_thread = False) as conn:
+    with sqlite3.connect('Server Database/Golds.db',check_same_thread = False) as conn:
         cur = conn.cursor()
         for table_name, values in golds.items():
             cur.execute(f"""CREATE TABLE IF NOT EXISTS'{table_name}' (
@@ -221,40 +220,10 @@ def create_table_to_gold_database(date):
             
         conn.commit()
       
-def update_datebase_30min_per_day(date = datetime.now()):
-    date = date.strftime("%Y%m%d")
-    while True:
-        with sqlite3.connect(f'Server Database/Golds.db',check_same_thread = False) as conn:
-            cur = conn.cursor()    
-            golds = get_gold_list(date)
-            for table_name, values in golds.items():
-                listOfTables = cur.execute(f"""SELECT name FROM sqlite_master WHERE type='table'
-                                    AND name='{table_name}';""").fetchall()
-                if listOfTables == []:
-                    cur.execute(f"""CREATE TABLE '{table_name}'(
-                        NAME VARCHAR(20) PRIMARY KEY,
-                        BUY VARCHAR(20),
-                        SELL VARCHAR(20))
-                        """)
-                    for value in values:
-                        name = value['name']
-                        buy = value['buy']
-                        sell = value["sell"]
-                        cur.execute(f"""INSERT INTO '{table_name}' VALUES(?,?,?)""",[name,buy,sell])
-                else:
-                    for value in values:
-                        name = value['name']
-                        buy = value['buy']
-                        sell = value["sell"]
-                        cur.execute(f"""UPDATE '{table_name}' SET BUY = ?,SELL = ? WHERE NAME = ?""",[buy,sell,name])
-            conn.commit()
-        min = 30
-
-        time.sleep(min*60)
 
 def query_from_database(name, date):
     results = []
-    with sqlite3.connect(f'Server Database/Golds.db',check_same_thread = False) as conn:
+    with sqlite3.connect('Server Database/Golds.db',check_same_thread = False) as conn:
         cursor = conn.cursor()
         values = cursor.execute(f"""SELECT * FROM '{date}'""").fetchall()
         if not values:
@@ -284,7 +253,7 @@ def receive_client_query(client):
         client_crash(client)
     else:
         date_format = datetime.strptime(date,"%Y%m%d").strftime("%#d/%#m/%Y")
-        with sqlite3.connect(f'Server Database/Golds.db',check_same_thread = False) as conn:
+        with sqlite3.connect('Server Database/Golds.db',check_same_thread = False) as conn:
             cur = conn.cursor()
             find_table = cur.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name= '{date_format}'").fetchall()
         if find_table == []:
@@ -319,7 +288,7 @@ def send_charts_data(client):
         while pre_15_day <= date_time:
             date = pre_15_day.strftime("%Y%m%d")
             date_format = pre_15_day.strftime("%#d/%#m/%Y")
-            with sqlite3.connect(f'Server Database/Golds.db',check_same_thread = False) as conn:
+            with sqlite3.connect('Server Database/Golds.db',check_same_thread = False) as conn:
                 cur = conn.cursor()
                 find_table = cur.execute(f"""SELECT name FROM sqlite_master WHERE type='table' AND name= '{date_format}'""").fetchall()
             if find_table == []:
@@ -345,6 +314,7 @@ def send_charts_data(client):
 
 #Handle client     
 def handle_client(client,client_address):
+    
     while True:
         try:
             client_login = recv(client)
@@ -411,7 +381,7 @@ def setup_database():
     global db,cursor
     
     #Connect to the database
-    with sqlite3.connect(f"Server Database/database.db",check_same_thread=False) as db:
+    with sqlite3.connect("Server Database/database.db",check_same_thread=False) as db:
         cursor = db.cursor()
 
     cursor.execute("""
@@ -421,6 +391,38 @@ def setup_database():
             password VARCHAR(20) NOT NULL
         )           
     """)
+
+def update_datebase_30min_per_day(date = datetime.now()):
+    date = date.strftime("%Y%m%d")
+    while True:
+        with sqlite3.connect('Server Database/Golds.db',check_same_thread = False) as conn:
+            cur = conn.cursor()    
+            golds = get_gold_list(date)
+            for table_name, values in golds.items():
+                listOfTables = cur.execute(f"""SELECT name FROM sqlite_master WHERE type='table'
+                                    AND name='{table_name}';""").fetchall()
+                if listOfTables == []:
+                    cur.execute(f"""CREATE TABLE '{table_name}'(
+                        NAME VARCHAR(20) PRIMARY KEY,
+                        BUY VARCHAR(20),
+                        SELL VARCHAR(20))
+                        """)
+                    for value in values:
+                        name = value['name']
+                        buy = value['buy']
+                        sell = value["sell"]
+                        cur.execute(f"""INSERT INTO '{table_name}' VALUES(?,?,?)""",[name,buy,sell])
+                else:
+                    for value in values:
+                        name = value['name']
+                        buy = value['buy']
+                        sell = value["sell"]
+                        cur.execute(f"""UPDATE '{table_name}' SET BUY = ?,SELL = ? WHERE NAME = ?""",[buy,sell,name])
+            conn.commit()
+        min = 30
+
+        time.sleep(min*60)
+
 
 #Start the server
 def start_server():
@@ -437,17 +439,8 @@ root = tk.Tk()
 root.title("SERVER")
 
 DIR = os.getcwd()
-
-
-if not os.path.exists('Images'):
-    messagebox.showerror('Status',"Requirement missing!!!")
-    
 PATH_IMG = f"{DIR}/Images/"
-root.iconbitmap(f"{PATH_IMG}Server.ico")
-
-if not os.path.exists('Server Database'):
-    os.makedirs('Server Database')  
-
+#root.iconbitmap(f"{PATH_IMG}Server.ico")
 
 app_height = 210
 app_width = 621
