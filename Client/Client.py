@@ -38,7 +38,7 @@ NOT_FOUND = "!NOT FOUND"
 DONE = "!DONE"
 ERROR = "!ERROR"
 
-class Justify:
+class JustifyApp:
     """Hàm căn giữa chỉnh màn hình"""
     def center(master,app_width,app_height):
         SCREEN_HEIGHT = master.winfo_screenheight()
@@ -48,7 +48,6 @@ class Justify:
         y = (SCREEN_HEIGHT/2) - (app_height/2)
         
         master.geometry(f"{app_width}x{app_height}+{int(x)}+{int(y)}")   
-
         
 class Tk(tk.Tk):  
     """Hàm di chuyển màn hình"""   
@@ -82,22 +81,43 @@ class Tk(tk.Tk):
         for widget in self.winfo_children():
             widget.destroy()
         
-class LoadingScreen(threading.Thread):
+class LoadingScreen():
     def __init__(self,master,*args,**kwargs):
+        global stop_flag 
+        stop_flag = False
+        master.withdraw()
+        if "time_live" in kwargs:
+            self.time_live = kwargs.get("time_live")
+        else:
+            self.time_live = 5
+        if "x" in kwargs:
+            self.info_x = kwargs.get("x")
+        else:
+            self.info_x = 100
+        if "y" in kwargs:
+            self.info_y = kwargs.get("y")
+        else:
+            self.info_y = 35
+        if "text" in kwargs:
+            self.text = kwargs.get("text")
+        else:
+            self.text = "Đang shut down..."
+            
         self.root = tk.Toplevel(master)
         self.master = master
-        self.master.withdraw()
+        
         self.app_width = 350
         self.app_height = 80
         self.root.resizable(False, False)
-        Justify.center(self.root,self.app_width,self.app_height)
+        """Căn thanh loading giữa màn hình"""
+        JustifyApp.center(self.root,self.app_width,self.app_height)
         self.root.wm_attributes("-transparentcolor",self.root["bg"])
         self.root.overrideredirect(1)
-      
         
-        self.frame = tk.Frame(self.root,width = 120,height = 28)
-        self.frame.place(x = 120,y = 35 )
-        tk.Label(self.frame,text= "Đang kết nối...",fg = "#3a7ff6",font= "Bahnschrift 13").place(x = 0,y=0)
+        self.frame = tk.Frame(self.root,width = 1000,height = 28)
+        self.frame.place(x = self.info_x,y = self.info_y )
+        self.Info_label = tk.Label(self.frame,text= self.text,fg = "#3a7ff6",font= "Bahnschrift 13")
+        self.Info_label.place(x = 0,y=0)
         for i in range(16):
             tk.Label(self.root,bg ="#000",width = 2, height = 1).place(x =(i)*22,y = 10)
 
@@ -106,32 +126,78 @@ class LoadingScreen(threading.Thread):
         self.thread.setDaemon(True)
         self.thread.start()
         self.root.after(20, self.check_thread)
-        
+    
+ 
     def play_animation(self):
-        for i in range(5):
-            for j in range(16):
-                tk.Label(self.root,bg ="#3a7ff6",width = 2, height = 1).place(x =(j)*22,y = 10)
-                time.sleep(0.06)
-                self.root.update_idletasks()
-                tk.Label(self.root,bg ="#000",width = 2, height = 1).place(x =(j)*22,y = 10)
-            
+        global stop_flag 
+        while not stop_flag:
+            for i in range(self.time_live):
+                if i != self.time_live - 1:   
+                    for j in range(16):
+                        tk.Label(self.root,bg ="#3a7ff6",width = 2, height = 1).place(x =(j)*22,y = 10)
+                        time.sleep(0.06)
+                        self.root.update_idletasks()
+                        tk.Label(self.root,bg ="#000",width = 2, height = 1).place(x =(j)*22,y = 10)
+                else:
+                    for j in range(16):
+                        tk.Label(self.root,bg ="#3a7ff6",width = 2, height = 1).place(x =(j)*22,y = 10)
+                        time.sleep(0.06)
+                        self.root.update_idletasks()
+                
     def check_thread(self):
         if self.thread.is_alive():
             self.root.after(20, self.check_thread)
         else:
             self.root.destroy() 
-            self.master.deiconify()
-    
+            
+    def master_exit(self):
+        self.master.destroy()
+        os._exit(1)
+        
 class SocketClient:
     def __init__(self):
+        self.login_status = False
         self.send_q = []
         self.stop_listen = True
+        self.disconnect_flag = False
+        self.last_username = None
         self.create_socket()
         return       
     
     def create_socket(self):
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    
+    def close_client(self):
+        self.client.close()
 
+    def client_disconnect(self):
+        global stop_flag
+        try:
+            """Kiểm tra xem client đã đóng kết nối với server hay chưa"""
+            if self.client.fileno() != -1:
+                self.disconnect_flag = True
+                self.add_message(DISCONNECT_MESSAGE)
+                time.sleep(1)
+                self.send(DISCONNECT_MESSAGE)
+                self.remove_message()
+        finally: 
+            time.sleep(2)
+            stop_flag = True
+            self.client.close()
+            os._exit(1)
+    
+    def client_try_to_reconnect(self):
+        global stop_flag
+        for i in range(5):
+            try:
+                self.client.connect(self.ADDR)
+            except socket.error as e:
+                time.sleep(2)
+            else:
+                stop_flag = True
+                return True  
+        return False 
+    
     def start_connections(self,HOST_IP):     
         self.HOST = HOST_IP
         self.PORT = 5050
@@ -150,14 +216,16 @@ class SocketClient:
     def listen_from_server(self):
         flag = True
         while flag:
-            try:
-                while self.stop_listen:
+            """Kiểm tra xem client có ngắt kết nối hay không"""
+            if self.disconnect_flag == True:
+                break
+            while self.stop_listen:
+                try:
                     ack_msg = "ACK"
                     msg = self.receive()
                     if len(self.send_q) != 0:
                         ack_msg = "STOP_FROM_CLIENT"    
                     
-                    print(msg)
                     if msg == "STOP_FROM_SERVER":
                         self.stop_listen = False
                         break
@@ -167,10 +235,19 @@ class SocketClient:
                         flag = False
                         break
                     self.send(ack_msg)  
-                else:
-                    print("Wait") 
-            except socket.timeout:
-                pass
+                except socket.error:
+                    if self.server_crash() == False:
+                        self.close_client()
+                        return
+                    else:
+                        messagebox.showinfo("Satus", "Reconnecting to server successfully")
+                        if self.login_status == True:
+                            msg = self.receive()
+                            self.send(ALREADY_LOGGED)
+                            self.send(self.last_username)
+                            
+                            
+            
     def add_message(self, msg):
         self.send_q.append(msg)
 
@@ -218,12 +295,15 @@ class SocketClient:
 
     def login(self,username, password):        
         try:
+            self.last_username = username
             self.add_message("Login")
             time.sleep(0.5)
             self.send("Login")
             self.send(username)
             self.send(password)
             login_msg = self.receive()
+            if login_msg == LOGIN_MSG_SUCCESS:
+                self.login_status = True
         except socket.error as e:
             self.remove_message()  
             return ERROR
@@ -231,7 +311,6 @@ class SocketClient:
             self.remove_message()  
             return login_msg
             
-    
     def start_query_from_server(self,name,date):
         list_gold = []
         try:
@@ -259,8 +338,7 @@ class SocketClient:
             self.remove_message() 
             return msg,list_gold
         
-    
-    def get_chart_value(self,name):   
+    def get_chart_value_from_server(self,name):   
         valid_date = []
         buy = []
         sell = []
@@ -299,24 +377,15 @@ class SocketClient:
             return msg,valid_date,buy,sell
         
     def server_crash(self):
-        reconnect = messagebox.askquestion("Status","Server is disconnect.\nReconnect to server?")
+        reconnect = messagebox.askquestion("Status","Server was suddenly disconnected.\nReconnect to server?")
         if reconnect == 0:
-            root.destroy()
             os._exit(1)
         else:
-            self.client.close()
-            self.clear_frame(root)
-
-    def close_client(self):
-        self.client.close()
-        
-    def disconnect(self):
-        try:
-            """Kiểm tra xem client đã đóng kết nối với server hay chưa"""
-            if self.client.fileno() != -1:
-                self.send(DISCONNECT_MESSAGE)
-        finally: 
-            self.client.close()
+            LoadingScreen()
+            if self.client_try_to_reconnect() == True:
+                return True
+     
+    
                 
     
          
@@ -336,7 +405,7 @@ class QueryGoldForm:
         self.app_height = 600
         
         """Căn giữa chương trình"""
-        Justify.center(self.root, self.app_width, self.app_height)
+        JustifyApp.center(self.root, self.app_width, self.app_height)
         
         self.canvas = tk.Canvas(
             self.root ,
@@ -564,7 +633,7 @@ class QueryGoldForm:
         self.search_button['state'] = "disabled"
         
         """Tạo yêu cầu gửi tới server và trả về trạng thái,giá trị cột ngày, và 2 giá trị giá mua và giá bán theo từng ngày"""
-        self.status,self.valid_date,self.buy,self.sell  = self.client.get_chart_value(self.chart_name)
+        self.status,self.valid_date,self.buy,self.sell  = self.client.get_chart_value_from_server(self.chart_name)
         
     """Mở đồ thị giá vàng"""
     def open_chart_window(self,event=None):
@@ -635,13 +704,13 @@ class QueryGoldForm:
         self.start_progress_bar()
         
     def exit_button_clicked(self):
-        ask = messagebox.askyesno("Status","Exit Now?",parent = self.root)
+        ask = messagebox.askyesno("Status","   Exit Now?   ",parent = self.root)
         if ask == 0:
             return
         else:
-            self.client.disconnect()
-            self.root.destroy()
-            sys.exit()    
+            LoadingScreen(self.root)            
+            threading.Thread(target = self.client.client_disconnect).start()
+
 
 """Form để đăng ký"""  
 class SignUpForm:
@@ -655,7 +724,7 @@ class SignUpForm:
         self.app_width = 600
         self.app_height = 300
         
-        Justify.center(self.root,self.app_width,self.app_height)
+        JustifyApp.center(self.root,self.app_width,self.app_height)
         
         self.canvas = tk.Canvas(
             self.root,
@@ -844,13 +913,12 @@ class SignUpForm:
                 return
             
     def exit_button_clicked(self):
-        ask = messagebox.askyesno("Status","Exit Now?",parent = self.root)
+        ask = messagebox.askyesno("Status","   Exit Now?   ",parent = self.root)
         if ask == 0:
             return
         else:
-            self.client.disconnect()
-            self.root.destroy()
-            sys.exit()
+            LoadingScreen(self.root)            
+            threading.Thread(target = self.client.client_disconnect).start()
  
  
 """Form để đăng nhập"""       
@@ -865,7 +933,7 @@ class LoginForm:
         self.app_width = 600
         self.app_height = 300
         
-        Justify.center(self.root,self.app_width,self.app_height)
+        JustifyApp.center(self.root,self.app_width,self.app_height)
         
         self.canvas = tk.Canvas(
             self.root,
@@ -1046,13 +1114,13 @@ class LoginForm:
                 return        
         
     def exit_button_clicked(self):
-        ask = messagebox.askyesno("Status","Exit Now?",parent = self.root)
+        ask = messagebox.askyesno("Status","   Exit Now?   ",parent = self.root)
         if ask == 0:
             return
         else:
-            self.client.disconnect()
-            self.root.destroy()
-            sys.exit() 
+            LoadingScreen(self.root)            
+            threading.Thread(target = self.client.client_disconnect).start()
+        
  
 """Form ban đầu để nhập địa chỉ IP SERVER""" 
 class InputHostIp(tk.Frame):
@@ -1063,7 +1131,7 @@ class InputHostIp(tk.Frame):
         self.app_width = 600
         self.app_height = 300
         
-        Justify.center(self.root ,self.app_width,self.app_height)
+        JustifyApp.center(self.root ,self.app_width,self.app_height)
     
         self.canvas = tk.Canvas(
             self.root ,
@@ -1273,6 +1341,7 @@ PATH_IMG = f"{DIR}/Images/"
 
 if __name__ == "__main__":
     root = tk.Tk()
+   
     """Danh sách cái hình ảnh chương trình cần"""
     try:
         img = Image.open(f"{PATH_IMG}Gold_img.png")
@@ -1294,5 +1363,6 @@ if __name__ == "__main__":
     except:
         messagebox.showerror("Can run application","   Missing some resource   ")
     app = ClientApplication(root)
+    # app = LoadingScreen(root)
     root.mainloop()
     

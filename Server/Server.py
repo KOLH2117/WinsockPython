@@ -2,6 +2,7 @@ import re
 import socket
 import threading
 import tkinter as tk
+from tkinter import messagebox
 import sqlite3
 import requests
 from bs4 import BeautifulSoup
@@ -11,8 +12,9 @@ import time
 import sys
 import os
 
-
 DIR = os.path.dirname(__file__)
+USER_DATABASE_PATH = DIR + "\\Server Database\\database.db"
+GOLDS_DATABASE_PATH = DIR + "\\Server Database\\Golds.db"
 
 HEADER = 64
 HOST = socket.gethostbyname(socket.gethostname())
@@ -43,84 +45,99 @@ ERROR = "!ERROR"
 """Nếu đường dẫn không tồn tại thì tạo đường dẫn"""
 if not os.path.exists('Server Database'):
     os.makedirs('Server Database')
-
  
 class ThirdPartyServerData:
     def __init__(self):
         return
     
-    #Get the list of golds from third-party
+    """Hàm lấy giá vàng"""
     def get_gold_list(date):
         all_golds = {}
         
-        #Request to URL and get html data
+        """Sử dụng thư viện requests để lấy html response"""
         URL = f"https://tygia.com/api.php?column=0&cols=1&title=1&chart=0&gold=1&rate=0&expand=2&nganhang=VIETCOM&ngay={date}"
-        html_text = requests.get(URL).text
+        try:
+            html_text = requests.get(URL).text
+        except:
+            messagebox.showerror("Status","Can't connect to third party server")
+            os._exit(1)
         soup = BeautifulSoup(html_text,"lxml")
         
-        #Extract the date of data from html
-        present_day = soup.find("span",id = "datepk1")
-        
-        #Extract the list of information about gold
-        list_gold = soup.find_all("tr",class_ = "rmore rmore1")
-        # SJC_HCM = soup.find("tr",id = "SJCH_Ch_Minh")
-        # SJC_HN = soup.find("tr",id = "SJCH_N_i")
-        list_gold.append(soup.find("tr",id = "SJCH_Ch_Minh"))
-        list_gold.append(soup.find("tr",id = "SJCH_N_i"))
-        list_gold.append(soup.find("tr", id = "DOJIH_N_iAVPL"))
-        list_gold.append(soup.find("tr", id = "DOJIH_Ch_MinhAVPL"))
-        list_gold.extend(soup.find_all("tr",class_ = "rmore3"))
-        list_gold.extend(soup.find_all("tr",class_ = "rmore4"))
-        list_gold.extend(soup.find_all("tr",class_ = "rmore5"))
-        #Get the value of the gold consists of name,buy_price,sell_price
-        values = []
-        for gold in list_gold:
-            if gold:
-                #Get the gold name
-                name = gold.find("td",class_ = "c1 text-left")
-                
-                #Get the buy tag
-                buy = name.find_next("td")
-                #Check if the value is available
-                if buy.find_all('div'):
-                    buy_price = buy.div.div.span.text
-                else:
-                    buy_price = "0"
-                
-                #Get the sell tag
-                sell = buy.find_next("td")
-                if sell.find_all('div'):
-                    sell_price = sell.div.div.span.text
-                else:
-                    sell_price = "0"
-                name = " ".join(name.text.split())
-                
-                if gold['id'] != "1OTHERMi_H_ng_950SJC":
-                    values.append({
-                                "name" : name,
-                                "buy" : buy_price, 
-                                "sell" : sell_price}
-                                )
-                else:
-                    values.append({
-                                "name" : name,
-                                "buy" : sell_price, 
-                                "sell" : buy_price}
-                                )
-        all_golds[present_day.text] = values 
-        return all_golds
+        try:
+            """Lấy ngày đang tra cứu từ html"""
+            present_day = soup.find("span",id = "datepk1")
+            
+            """Dựa vào class và id để tìm lấy dữ liệu từ html"""
+            list_gold = soup.find_all("tr",class_ = "rmore rmore1")
+            list_gold.append(soup.find("tr",id = "SJCH_Ch_Minh"))
+            list_gold.append(soup.find("tr",id = "SJCH_N_i"))
+            list_gold.append(soup.find("tr", id = "DOJIH_N_iAVPL"))
+            list_gold.append(soup.find("tr", id = "DOJIH_Ch_MinhAVPL"))
+            list_gold.extend(soup.find_all("tr",class_ = "rmore3"))
+            list_gold.extend(soup.find_all("tr",class_ = "rmore4"))
+            list_gold.extend(soup.find_all("tr",class_ = "rmore5"))
+            """Danh sách trả về gồm loại vàng,giá mua,giá bán"""
+            values = []
+            for gold in list_gold:
+                if gold:
+                    """Tìm đến thẻ chứa loại vàng"""
+                    name = gold.find("td",class_ = "c1 text-left")
+                    
+                    """Tìm đến thẻ chứa giá mua"""
+                    buy = name.find_next("td")
+                    
+                    """Nếu tồn tại thì trích xuất giá mua ra"""
+                    if buy.find_all('div'):
+                        buy_price = buy.div.div.span.text
+                    else:
+                        """Nếu không có thẻ mua thì cho nó bằng 0"""
+                        buy_price = "0"
+                    
+                    """Tìm đến thẻ chứa giá mua"""
+                    sell = buy.find_next("td")
+                    
+                    """Nếu tồn tại thì trích xuất giá mua ra"""
+                    if sell.find_all('div'):
+                        sell_price = sell.div.div.span.text
+                    else:
+                        """Nếu không có thẻ mua thì cho nó bằng 0"""
+                        sell_price = "0"
+                    
+                    """Xoá khoảng trắn thừa trong loại vàng"""
+                    name = " ".join(name.text.split())
+                    
+                    
+                    """Trường hợp đặc biệt đối với Mi Hồng 950 third party bị lộn giá mua với giá bán"""
+                    """Đã kiểm chứng với nhiều trang lấy giá vàng khác"""
+                    if gold['id'] != "1OTHERMi_H_ng_950SJC":
+                        values.append({
+                                    "name" : name,
+                                    "buy" : buy_price, 
+                                    "sell" : sell_price}
+                                    )
+                    else:
+                        values.append({
+                                    "name" : name,
+                                    "buy" : sell_price, 
+                                    "sell" : buy_price}
+                                    )
+            """Trả về dạng dict với key là ngày tra"""
+            all_golds[present_day.text] = values 
+            return all_golds
+        except:
+            return None
 
 class ServerDatabase:
     def __init__(self):
         self.setup_database()
-        self.Thread = threading.Thread(target = self.update_datebase_30min_per_day,daemon= True).start()
+        threading.Thread(target = self.update_datebase_30min_per_day,daemon= True).start()
             
     """Chuẩn bị cơ sở dữ liệu"""
     def setup_database(self):
-        #Connect to the database
-        with sqlite3.connect(DIR + "\\Server Database\\database.db",check_same_thread=False) as conn:
+        """Kết nối đến database"""
+        with sqlite3.connect(USER_DATABASE_PATH,check_same_thread=False) as conn:
             cursor = conn.cursor()
-
+            """Tạo bảng dữ liệu người dùng nếu chưa tồn tại"""
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     userID INTEGER PRIMARY KEY,
@@ -130,14 +147,34 @@ class ServerDatabase:
             """)
             
             conn.commit()
+    
+    """Hàm tìm dữ liệu người dùng trong cơ sở dữ liệu"""
+    def find_user_info(username):
+        with sqlite3.connect(USER_DATABASE_PATH,check_same_thread = False) as conn:
+            cursor = conn.cursor()
+            find_user = ("SELECT * FROM users WHERE username = ?")
+            cursor.execute(find_user,[username])
+            result =  cursor.fetchall()
+        
+        return result
+
+    """Hàm nhập dữ liệu người dùng vào cơ sở dữ liệu"""
+    def insert_user(username,password):
+        with sqlite3.connect(USER_DATABASE_PATH,check_same_thread = False) as conn:
+            cursor = conn.cursor()
+            insert_user = ("""INSERT INTO users (username,password) VALUES (?, ?)""")
+            cursor.execute(insert_user,[(username),(password)])
+            conn.commit()
             
-    #Start gathering and update data each 30 min on another thread
+    """Hàm cập nhật dữ liệu từ third party 30 phút 1 lần"""
     def update_datebase_30min_per_day(self,date = datetime.now()):
         date = date.strftime("%Y%m%d")
         while True:
-            with sqlite3.connect(DIR + '\\Server Database\\Golds.db',check_same_thread = False) as conn:
+            with sqlite3.connect(GOLDS_DATABASE_PATH,check_same_thread = False) as conn:
                 cursor = conn.cursor()    
+                """Lấy dữ liệu từ third party về"""
                 golds = ThirdPartyServerData.get_gold_list(date)
+                
                 for table_name, values in golds.items():
                     listOfTables = cursor.execute(f"""SELECT name FROM sqlite_master WHERE type='table'
                                         AND name='{table_name}';""").fetchall()
@@ -163,21 +200,24 @@ class ServerDatabase:
             min = 30
             time.sleep(min*60)
 
+    """Hàm tìm dữ liệu giá vàng trong database tìm gần đúng tên"""
     def find_approximate_from_database(name, date):
         results = []
-        with sqlite3.connect(DIR + '\\Server Database\\Golds.db',check_same_thread = False) as conn:
+        with sqlite3.connect(GOLDS_DATABASE_PATH,check_same_thread = False) as conn:
             cursor = conn.cursor()
             values = cursor.execute(f"""SELECT * FROM '{date}'""").fetchall()
             if not values:
                 return results
             list_of_name = [gold[0] for gold in values]
+            """Tìm tên gần đúng nhất với tên người dùng đang tìm"""
             the_most_close = process.extractOne(name,list_of_name)
             
-            #If the percent larger than 95%
+            """Nếu độ chính xác hơn 95% thì trả về giá vàng của loại đó"""
             if the_most_close[1] >= 95:
                 values = cursor.execute(f"""SELECT * FROM "{date}" WHERE NAME = ?""",[the_most_close[0]])
                 results.extend(values.fetchall())
             else:
+                """Nếu độ chính xác bé hơn 95% thì trả về 1 danh sách giá vàng của các loại gần đúng với độ chính xác hơn 80%"""
                 list_of_name = process.extractWithoutOrder(name,list_of_name)
                 list_of_name = [item[0] for item in list_of_name if item[1] >= 80]
                 
@@ -187,13 +227,15 @@ class ServerDatabase:
                     
         return results
 
+    """Hàm tạo bảng dữ liệu"""
     def create_table_to_gold_database(date):  
         golds = ThirdPartyServerData.get_gold_list(date)
-        
-        with sqlite3.connect(DIR + '\\Server Database\\Golds.db',check_same_thread = False) as conn:
+        if golds == None:
+            return False
+        with sqlite3.connect(GOLDS_DATABASE_PATH,check_same_thread = False) as conn:
             cursor = conn.cursor()
             for table_name, values in golds.items():
-                cursor.execute(f"""CREATE TABLE IF NOT EXISTS'{table_name}' (
+                cursor.execute(f"""CREATE TABLE IF NOT EXISTS '{table_name}' (
                         NAME VARCHAR(20) PRIMARY KEY,
                         BUY VARCHAR(20),
                         SELL VARCHAR(20))
@@ -205,35 +247,26 @@ class ServerDatabase:
                     cursor.execute(f"""INSERT INTO '{table_name}' VALUES (?,?,?)""",[name,buy,sell])
                 
             conn.commit()
-
-    def find_user_info(username):
-        with sqlite3.connect(DIR + '\\Server Database\\database.db',check_same_thread = False) as conn:
-            cursor = conn.cursor()
-            find_user = ("SELECT * FROM users WHERE username = ?")
-            cursor.execute(find_user,[username])
-            result =  cursor.fetchall()
-        
-        return result
-
-    def insert_user(username,password):
-        with sqlite3.connect(DIR + '\\Server Database\\database.db',check_same_thread = False) as conn:
-            cursor = conn.cursor()
-            insert_user = ("""INSERT INTO users (username,password) VALUES (?, ?)""")
-            cursor.execute(insert_user,[(username),(password)])
-            conn.commit()
+            return True
         
     def query_from_database(name,date):
         date_format = datetime.strptime(date,"%Y%m%d").strftime("%#d/%#m/%Y")
-        with sqlite3.connect(DIR + '\\Server Database\\Golds.db',check_same_thread = False) as conn:
-            cur = conn.cursor()
-            find_table = cur.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name= '{date_format}'").fetchall()
-        if find_table == []:
-            ServerDatabase.create_table_to_gold_database(date)
+        if ServerDatabase.check_gold_table_exists(date_format) == False:
+            if ServerDatabase.create_table_to_gold_database(date) == False:
+                return None
         results =  ServerDatabase.find_approximate_from_database(name,date_format)
-        
+        print(results)
         return results
     
-    def query_from_database_15_before(name,date):
+    def check_gold_table_exists(table_name):
+        with sqlite3.connect(GOLDS_DATABASE_PATH,check_same_thread = False) as conn:
+            cur = conn.cursor()
+            find_table = cur.execute(f"""SELECT name FROM sqlite_master WHERE type='table' AND name= '{table_name}'""").fetchall()
+        if find_table == []:
+            return False
+        return True
+    
+    def query_from_database_15_days_before(name,date):
         date_time = datetime.strptime(date,"%Y%m%d")
         pre_15_day = date_time - timedelta(days=15)
         buy = []
@@ -242,18 +275,16 @@ class ServerDatabase:
         while pre_15_day <= date_time:
             date = pre_15_day.strftime("%Y%m%d")
             date_format = pre_15_day.strftime("%#d/%#m/%Y")
-            with sqlite3.connect(DIR + '\\Server Database\\Golds.db',check_same_thread = False) as conn:
-                cur = conn.cursor()
-                find_table = cur.execute(f"""SELECT name FROM sqlite_master WHERE type='table' AND name= '{date_format}'""").fetchall()
-            if find_table == []:
-                ServerDatabase.create_table_to_gold_database(date)
-                
-            result = cur.execute(f"SELECT BUY,SELL FROM '{date_format}' WHERE NAME = ?",[name]).fetchall()
+            if ServerDatabase.check_gold_table_exists(date_format) == False:
+                if ServerDatabase.create_table_to_gold_database(date) == False:
+                    continue
+            result = ServerDatabase.find_approximate_from_database(name,date_format)
+            # result = cur.execute(f"SELECT BUY,SELL FROM '{date_format}' WHERE NAME = ?",[name]).fetchall()
             if result:
                 valid_days.append(date_format)
                 for item in result:
-                    buy.append(item[0])
-                    sell.append(item[1])
+                    buy.append(item[1])
+                    sell.append(item[2])
             pre_15_day += timedelta(days=1)
         
         return valid_days,buy,sell
@@ -296,34 +327,13 @@ class SocketServer:
                 msg = client.recv(msg_length).decode(FORMAT)
             return msg    
 
-    
     def create_server(self):
         self.SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
-    def sub_backend(self,client):
-        global server_disconnect_flag
-        
-        while True:
-            if server_disconnect_flag:
-                if self.stop_listen == True:
-                    self.send(client,"PACKET")
-                    msg = self.recv(client)
-                    print(msg)
-                    if msg == "STOP":
-                        self.stop_listen = False  
-                        self.send(client,"STOP")  
-                else:
-                    print("Wait")
-            else:
-                break
-        self.send(client,DISCONNECT_MESSAGE)
-        self.disconnected = True
-        # os._exit(0)
-    
-    def check_server_disconnect(self):
-        while True:
-            if self.disconnected:
-                os._exit(0)
+    def server_re_online(self,client):
+        username = self.recv(client)
+        self.app.insert_to_text_box(f"[SERVER] {username} - Welcome to Server")
+        self.clients[client] = username
         
     """Client ngắt kết nối"""
     def client_disconnect(self,client):
@@ -353,21 +363,25 @@ class SocketServer:
         connected = True
         stop_receive = False
         while connected:
+            """Lắng nghe và gửi thông báo điến client liên tục"""
             if stop_receive == False:
                 self.send(client,"PACKET")
                 msg = self.recv(client)
-                print(msg)
-                if msg == "STOP_FROM_CLIENT":
+                """Nếu client có tín hiệu cần gửi thông tin đế server thì dừng quá trình này"""
+                if msg == ALREADY_LOGGED:
+                    login_status = True
+                    self.server_re_online(client)
+                elif msg == "STOP_FROM_CLIENT":
                     stop_receive = True  
                     self.send(client,"STOP_FROM_SERVER") 
                 elif msg == DISCONNECT_MESSAGE:
-                    self.client_disconnect()
-                    break 
+                    self.client_disconnect(client)
+                    break
             else:
+                """Trạng thái đăng nhập = False là chưa đăng nhập vào server"""
                 if login_status == False:
                     try:
                         msg = self.recv(client)
-                        print(msg)
                     except socket.error as e:
                         self.client_crash(client)
                         break
@@ -382,6 +396,7 @@ class SocketServer:
                             self.register(client) 
                         stop_receive = False
                 else:
+                    """Đăng nhập thành công thì client mới có quyền tra cứu"""
                     try:
                         msg = self.recv(client)
                     except socket.error as e:
@@ -395,10 +410,13 @@ class SocketServer:
                             self.client_log_out(client)
                             connected = False
                         stop_receive = False
+                        
+            """Tín hiệu để phá vòng lập và gửi thông báo server ngừng kết nối đến các client"""
             if server_disconnect_flag:
                 break
-        self.send(client,DISCONNECT_MESSAGE)
-        self.disconnected = True
+        """Khi mà server còn đang kết nối đến client thì gửi tín hiệu ngừng kết nối"""
+        if connected:
+            self.send(client,DISCONNECT_MESSAGE)
         
                
        
@@ -425,12 +443,6 @@ class SocketServer:
             ACCEPT_THREAD = threading.Thread(target=self.accept_incoming_connections)
             ACCEPT_THREAD.start()
     
-    def broadcast(self,msg,prefix = ""):
-        for sock in self.addresses:
-            self.send(sock,prefix+msg)
-            
-        #Handle the register process
-    
     """Người dùng đăng kí"""
     def register(self,client):
         try:    
@@ -454,7 +466,7 @@ class SocketServer:
         try:    
             username = self.recv(client)
             password = self.recv(client)
-            print (username,password)
+      
             """Tìm người dùng trong cơ sở dữ liệu"""
             result = ServerDatabase.find_user_info(username)
             
@@ -468,7 +480,7 @@ class SocketServer:
                         for key,user in self.clients.items():
                             if user == username:
                                 """Nếu đăng nhập rồi thì trả về False kèm thông báo"""
-                                self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} has already logged in")
+                                self.app.insert_to_text_box(f"[SERVER] {username} has already logged in")
                                 self.send(client,ALREADY_LOGGED)
                                 return False
                             else:
@@ -477,15 +489,13 @@ class SocketServer:
                                 self.app.insert_to_text_box(f"[SERVER] {username} - Welcome to Server")
                                 self.send(client,LOGIN_MSG_SUCCESS) 
                                 self.clients[client] = username
-                                print(self.clients)
                                 return True
                     else:
-                        """Nếu chưa đăng nhập và mật khẩu đúng thì trả về True kèm thông báo"""
+                        """Nếu chưa có người dùng nào đăng nhập và mật khẩu đúng thì trả về True kèm thông báo"""
                         self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} has logged in successfully")
                         self.app.insert_to_text_box(f"[SERVER] {username} - Welcome to Server")
                         self.send(client,LOGIN_MSG_SUCCESS) 
                         self.clients[client] = username
-                        print(self.clients)
                         return True
                 else:
                     """Nếu mật khẩu sai thì trả về False kèm thông báo"""
@@ -528,7 +538,7 @@ class SocketServer:
         try:
             name = self.recv(client)
             date = self.last_query_date
-            valid_days,buy,sell = ServerDatabase.query_from_database_15_before(name,date)
+            valid_days,buy,sell = ServerDatabase.query_from_database_15_days_before(name,date)
             self.send(client,str(len(valid_days)))
             for item in valid_days:
                 self.send(client,item)
