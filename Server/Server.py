@@ -255,7 +255,6 @@ class ServerDatabase:
             if ServerDatabase.create_table_to_gold_database(date) == False:
                 return None
         results =  ServerDatabase.find_approximate_from_database(name,date_format)
-        print(results)
         return results
     
     def check_gold_table_exists(table_name):
@@ -279,7 +278,6 @@ class ServerDatabase:
                 if ServerDatabase.create_table_to_gold_database(date) == False:
                     continue
             result = ServerDatabase.find_approximate_from_database(name,date_format)
-            # result = cur.execute(f"SELECT BUY,SELL FROM '{date_format}' WHERE NAME = ?",[name]).fetchall()
             if result:
                 valid_days.append(date_format)
                 for item in result:
@@ -299,8 +297,6 @@ class SocketServer:
         self.receive_q = []
         self.create_server()
         self.start_server()
-
-        return
     
     """Gửi dữ liệu đến client theo format gửi độ dài rồi gửi nội dung"""
     def send(self,client,msg):
@@ -332,7 +328,7 @@ class SocketServer:
     
     def server_re_online(self,client):
         username = self.recv(client)
-        self.app.insert_to_text_box(f"[SERVER] {username} - Welcome to Server")
+        self.app.insert_to_text_box(f"[SERVER] {username} - Welcome back to Server")
         self.clients[client] = username
         
     """Client ngắt kết nối"""
@@ -351,66 +347,73 @@ class SocketServer:
         
     """Khi client đột ngột tắt"""
     def client_crash(self,client):
-        self.app.insert_to_text_box(f"[SERVER] {self.clients[client]} crash ")
-        del self.clients[client]
-        del self.addresses[client]  
+        if client in self.clients:
+            self.app.insert_to_text_box(f"[SERVER] User {self.clients[client]} crash ")
+            del self.clients[client]
+        else:
+            self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} crash ")
+            del self.addresses[client]  
         client.close() 
          
     """Xử lí yêu cầu người dùng"""    
     def handle_client(self,client):
         global server_disconnect_flag
+        last_client_IP = client
         login_status = False
         connected = True
         stop_receive = False
         while connected:
-            """Lắng nghe và gửi thông báo điến client liên tục"""
-            if stop_receive == False:
-                self.send(client,"PACKET")
-                msg = self.recv(client)
-                """Nếu client có tín hiệu cần gửi thông tin đế server thì dừng quá trình này"""
-                if msg == ALREADY_LOGGED:
-                    login_status = True
-                    self.server_re_online(client)
-                elif msg == "STOP_FROM_CLIENT":
-                    stop_receive = True  
-                    self.send(client,"STOP_FROM_SERVER") 
-                elif msg == DISCONNECT_MESSAGE:
-                    self.client_disconnect(client)
-                    break
-            else:
-                """Trạng thái đăng nhập = False là chưa đăng nhập vào server"""
-                if login_status == False:
-                    try:
-                        msg = self.recv(client)
-                    except socket.error as e:
-                        self.client_crash(client)
+            try:
+                """Lắng nghe và gửi thông báo điến client liên tục"""
+                if stop_receive == False:
+                    self.send(client,"PACKET")
+                    msg = self.recv(client)
+                    """Nếu client có tín hiệu cần gửi thông tin đế server thì dừng quá trình này"""
+                    if msg == ALREADY_LOGGED:
+                        login_status = True
+                        self.server_re_online(client)
+                    elif msg == "STOP_FROM_CLIENT":
+                        stop_receive = True  
+                        self.send(client,"STOP_FROM_SERVER") 
+                    elif msg == DISCONNECT_MESSAGE:
+                        self.client_disconnect(client)
                         break
-                    else:
-                        if msg == DISCONNECT_MESSAGE:
-                            self.client_disconnect(client)
-                            connected = False
-                        elif msg == "Login":
-                            if self.log_in(client) == True:
-                                login_status = True
-                        else:
-                            self.register(client) 
-                        stop_receive = False
                 else:
-                    """Đăng nhập thành công thì client mới có quyền tra cứu"""
-                    try:
-                        msg = self.recv(client)
-                    except socket.error as e:
-                        self.client_crash(client)
+                    """Trạng thái đăng nhập = False là chưa đăng nhập vào server"""
+                    if login_status == False:
+                        try:
+                            msg = self.recv(client)
+                        except socket.error as e:
+                            self.client_crash(last_client_IP)
+                            break
+                        else:
+                            if msg == DISCONNECT_MESSAGE:
+                                self.client_disconnect(client)
+                                connected = False
+                            elif msg == "Login":
+                                if self.log_in(client) == True:
+                                    login_status = True
+                            else:
+                                self.register(client) 
+                            stop_receive = False
                     else:
-                        if msg == "QUERY":
-                            self.receive_client_query(client)
-                        elif msg == "CHART":
-                            self.send_charts_data(client)
-                        elif msg == DISCONNECT_MESSAGE:
-                            self.client_log_out(client)
-                            connected = False
-                        stop_receive = False
-                        
+                        """Đăng nhập thành công thì client mới có quyền tra cứu"""
+                        try:
+                            msg = self.recv(client)
+                        except socket.error as e:
+                            self.client_crash(last_client_IP)
+                        else:
+                            if msg == "QUERY":
+                                self.receive_client_query(client)
+                            elif msg == "CHART":
+                                self.send_charts_data(client)
+                            elif msg == DISCONNECT_MESSAGE:
+                                self.client_log_out(client)
+                                connected = False
+                            stop_receive = False
+            except socket.error:
+                self.client_crash(last_client_IP)   
+                break
             """Tín hiệu để phá vòng lập và gửi thông báo server ngừng kết nối đến các client"""
             if server_disconnect_flag:
                 break
@@ -438,8 +441,10 @@ class SocketServer:
             self.SERVER.bind(ADDR) #Bind server trên địa chỉ ADDR 
             self.SERVER.listen(5)
         except socket.error:
-            pass
+            messagebox.showerror("Error","  Can't start server")
+            os._exit(1)
         else:
+            self.app.insert_to_text_box(f"Waiting for connection at {HOST}...")
             ACCEPT_THREAD = threading.Thread(target=self.accept_incoming_connections)
             ACCEPT_THREAD.start()
     
@@ -641,7 +646,7 @@ class MainPage:
         self.quit_but.pack(pady = (10,10))
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
                 
-        self.status_list.insert(tk.END,f"Waiting for connection at {HOST}...")
+        
     
     def insert_to_text_box(self,msg):
         self.status_list.insert(tk.END,msg)

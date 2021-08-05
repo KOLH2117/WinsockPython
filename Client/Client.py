@@ -127,29 +127,28 @@ class LoadingScreen():
         self.thread.start()
         self.root.after(20, self.check_thread)
     
- 
     def play_animation(self):
         global stop_flag 
         while not stop_flag:
-            for i in range(self.time_live):
-                if i != self.time_live - 1:   
-                    for j in range(16):
-                        tk.Label(self.root,bg ="#3a7ff6",width = 2, height = 1).place(x =(j)*22,y = 10)
-                        time.sleep(0.06)
-                        self.root.update_idletasks()
-                        tk.Label(self.root,bg ="#000",width = 2, height = 1).place(x =(j)*22,y = 10)
-                else:
-                    for j in range(16):
-                        tk.Label(self.root,bg ="#3a7ff6",width = 2, height = 1).place(x =(j)*22,y = 10)
-                        time.sleep(0.06)
-                        self.root.update_idletasks()
+            for i in range(self.time_live): 
+                for j in range(16):
+                    tk.Label(self.root,bg ="#3a7ff6",width = 2, height = 1).place(x =(j)*22,y = 10)
+                    time.sleep(0.06)
+                    self.root.update_idletasks()
+                    tk.Label(self.root,bg ="#000",width = 2, height = 1).place(x =(j)*22,y = 10)
+           
+        for j in range(16):
+            tk.Label(self.root,bg ="#3a7ff6",width = 2, height = 1).place(x =(j)*22,y = 10)
+            time.sleep(0.06)
+            self.root.update_idletasks()
                 
     def check_thread(self):
         if self.thread.is_alive():
             self.root.after(20, self.check_thread)
         else:
-            self.root.destroy() 
-            
+            self.root.destroy()  
+            self.master.deiconify()
+         
     def master_exit(self):
         self.master.destroy()
         os._exit(1)
@@ -163,7 +162,8 @@ class SocketClient:
         self.last_username = None
         self.create_socket()
         return       
-    
+    def set_GUI(self,master):
+        self.master = master
     def create_socket(self):
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
@@ -188,6 +188,9 @@ class SocketClient:
     
     def client_try_to_reconnect(self):
         global stop_flag
+        LoadingScreen(self.master, text= "Đang kết nối lại...")
+        self.close_client()
+        self.create_socket()
         for i in range(5):
             try:
                 self.client.connect(self.ADDR)
@@ -230,17 +233,18 @@ class SocketClient:
                         self.stop_listen = False
                         break
                     elif msg == DISCONNECT_MESSAGE:
-                        messagebox.showwarning("Status", "Server will be shut down")
-                        self.close_client()
+                        messagebox.showwarning("Trạng thái", "Server sẽ ngắt kết nối")
+                        self.server_shutdown()
                         flag = False
                         break
                     self.send(ack_msg)  
                 except socket.error:
                     if self.server_crash() == False:
+                        messagebox.showinfo("Trạng thái", "Không thể kết nối lại với Server")
                         self.close_client()
                         return
                     else:
-                        messagebox.showinfo("Satus", "Reconnecting to server successfully")
+                        messagebox.showinfo("Trạng thái", "Kết nối lại đến server thành công")
                         if self.login_status == True:
                             msg = self.receive()
                             self.send(ALREADY_LOGGED)
@@ -376,14 +380,19 @@ class SocketClient:
             self.remove_message()
             return msg,valid_date,buy,sell
         
+    def server_shutdown(self):
+        self.close_client()
+        loading = LoadingScreen(self.master)
+        time.sleep(3)
+        loading.master_exit()
     def server_crash(self):
-        reconnect = messagebox.askquestion("Status","Server was suddenly disconnected.\nReconnect to server?")
+        reconnect = messagebox.askquestion("Trạng thái","Server bị crash\nKết nối lại???")
         if reconnect == 0:
             os._exit(1)
         else:
-            LoadingScreen()
             if self.client_try_to_reconnect() == True:
                 return True
+            return False
      
     
                 
@@ -407,6 +416,7 @@ class QueryGoldForm:
         """Căn giữa chương trình"""
         JustifyApp.center(self.root, self.app_width, self.app_height)
         
+        """Background màu xanh của app"""
         self.canvas = tk.Canvas(
             self.root ,
             bg = "#3a6ff7",
@@ -421,17 +431,17 @@ class QueryGoldForm:
             50, 0, 50+800, 0+600,
             fill = "#ffffff",
             outline = "")
+        
+        self.canvas.create_rectangle(
+            393, 65, 393+115, 65+2,
+            fill = "#000000",
+            outline = "")
 
         self.canvas.create_text(
             450.0, 44.5,
             text = "TRA CỨU GIÁ VÀNG",
             fill = "#000000",
             font = ("None", int(24.0)))
-
-        self.canvas.create_rectangle(
-            393, 65, 393+115, 65+2,
-            fill = "#000000",
-            outline = "")
 
         self.canvas.create_text(
             136.0+15, 138.5,
@@ -445,6 +455,7 @@ class QueryGoldForm:
             fill = "#000000",
             font = ("None", int(18.0)))
         
+        """Ô nhập dữ liệu"""
         self.entry0_bg = self.canvas.create_image(
             330.0+25, 138.5,
             image = TEXT_BOX_GOLD_IMG)
@@ -454,12 +465,13 @@ class QueryGoldForm:
             bg = "#e9e9e9",
             highlightthickness = 0,
             font=("",13))
-
+        self.name.bind("<Return>",self.find_button_clicked)
         self.name.place(
             x = 240.5+15, y = 116+10,
             width = 179.0,
             height = 30)
         
+        """Ô chọn ngày tra"""
         self.cal = DateEntry(
                         width=12,
                         background='darkblue',
@@ -474,6 +486,7 @@ class QueryGoldForm:
                 width = 100,
                 height = 30)
         
+        """Nút tìm"""
         self.search_button = tk.Button(
             image = SEARCH_BUTTON_IMG,
             borderwidth = 0,
@@ -486,21 +499,31 @@ class QueryGoldForm:
             width = 143,
             height = 58)
 
-        self.my_tree = ttk.Treeview(self.root)
+        """Bảng kết quả"""
+        self.my_tree = ttk.Treeview(self.root,style='MyStyle.Treeview')
         self.my_tree['columns'] = ("Đơn vị: đồng/lượng","Giá mua","Giá bán")
         
         self.style = ttk.Style()
-        self.style.theme_use('clam')
+        self.style.theme_use("clam")
+        
         """Chỉnh sửa màu cho bảng"""
-        self.style.configure("Treeview",
+        self.style.configure("MyStyle.Treeview.Heading",
+                             borderwidth=0,
+                             foreground= 'black',
+                             background='white',
+                             fieldbackground = "white",
+                             font = ("",18))
+        self.style.configure("MyStyle.Treeview",
                         background='#E9E9E9',
                         foreground= 'black',
                         rowheight = 25, 
-                        fieldbackground='#E9E9E9',
+                        fieldbackground='white',
+                        bordercolor = 'white',
+                        borderwidth=0,
                         )
         
         """Thay đổi màu khi người dùng chọn"""
-        self.style.map('Treeview',background = [('selected','#0E74EC')])
+        self.style.map('MyStyle.Treeview',background = [('selected','#0E74EC')])
         
         """Định dạng cột"""
         self.my_tree.column("#0",width = 0, stretch =tk.NO)
@@ -514,14 +537,19 @@ class QueryGoldForm:
         self.my_tree.heading("Giá mua",text = "Giá mua",anchor = tk.W)
         self.my_tree.heading("Giá bán",text = "Giá bán",anchor = tk.W)
         
+        """Chỉnh màu cho bảng"""
+        self.my_tree.tag_configure("evenrow", background  = "lightblue")
+        self.my_tree.tag_configure("oddrow", background  = "#fff")
+        
         self.my_tree.place(
-            x =70 ,y = 250,
-            width = 760,
+            x =65 ,y = 250,
+            width = 770,
             height = 330
         )
-        
+              
         self.my_tree.bind("<Double-1>",self.chart_button_clicked)
         
+        """Nút thu nhỏ màn hình"""
         self.minimize_button = tk.Button(
             image = MINIMIZE_IMG,
             borderwidth = 0,
@@ -534,6 +562,7 @@ class QueryGoldForm:
             width = 24,
             height = 24)
         
+        """Nút thoát"""
         self.exit_button = tk.Button(
         image = EXIT_BUTTON_IMG,
         borderwidth = 0,
@@ -545,11 +574,11 @@ class QueryGoldForm:
             x = 826, y = 0,
             width = 24,
             height = 24)
-        """Cờ hiệu và các hàm chức năng"""
+        
+        """Cờ hiệu"""
         self.status = None
         self.flag = 0
         
-    
     """Các hàm hỗ trợ"""       
     def clear_table(self):
         if self.my_tree.get_children():
@@ -560,7 +589,7 @@ class QueryGoldForm:
         self.clear_table()
             
         if not self.name:
-            messagebox.showwarning("Status","Please fill the entry!")
+            messagebox.showwarning("Cảnh báo","Hãy điền đầy đủ thông tin")
             return False  
         
         return True
@@ -571,31 +600,33 @@ class QueryGoldForm:
             threading.Thread(target = self.get_list_gold_threads),
             threading.Thread(target = self.get_value_of_chart)
             ]
-        s = ttk.Style()
+        
         TROUGH_COLOR = 'white'
         BAR_COLOR = '#3A6FF7'
-        s.configure("bar.Horizontal.TProgressbar", 
+        
+        self.process = ttk.Progressbar(self.root,style="bar.Horizontal.TProgressbar",orient=tk.HORIZONTAL,length=300,mode = "indeterminate")
+        self.style.configure("bar.Horizontal.TProgressbar", 
                     troughcolor=TROUGH_COLOR, 
                     bordercolor=TROUGH_COLOR, 
                     background=BAR_COLOR, 
                     lightcolor=BAR_COLOR, 
                     darkcolor=BAR_COLOR,
                     borderwidth = 0)
-        
-        self.process = ttk.Progressbar(self.root,style="bar.Horizontal.TProgressbar",orient=tk.HORIZONTAL,length=300,mode = "indeterminate")
+        self.process["maximum"] = 100
+        self.search_button['state'] = "disabled"
         self.process.place(x = 50,y = 250+330,
                     width = 760+40,height = 20)
-        
-        
+        self.root.update()
         self.open_chart_thread = self.handle_thread[self.flag]
         self.open_chart_thread.setDaemon(True)
-        self.process.start()
         self.open_chart_thread.start()
-        self.root.after(20, self.check_thread)
+        self.process.start()
+        self.root.after(10, self.check_thread)
         
     def check_thread(self):
         if self.open_chart_thread.is_alive():
-            self.root.after(20, self.check_thread)
+            self.root.update_idletasks()
+            self.root.after(10, self.check_thread)
         else:
             self.process.stop()
             self.process.destroy()
@@ -610,14 +641,19 @@ class QueryGoldForm:
     
     """Hàm hiện kết quả lên bảng"""    
     def display_table(self):
+        self.search_button['state'] = 'normal'
         if self.status == DONE:
             count = 0
             for item in self.list_gold:
-                self.my_tree.insert('',index='end',iid = count,text='',values= (item[0],item[1],item[2]))
+                if count % 2 == 0:
+                    self.my_tree.insert('',index='end',iid = count,text='',values= (item[0],item[1],item[2]),tags= ("evenrow",))
+                else:
+                    self.my_tree.insert('',index='end',iid = count,text='',values= (item[0],item[1],item[2]),tags = ("oddrow",))
+                    
                 count += 1
-            messagebox.showinfo("Status","Success")
+            messagebox.showinfo("Trạng thái","   Tìm thành công")
         elif self.status == NOT_FOUND:
-            messagebox.showerror("Status",NOT_FOUND)  
+            messagebox.showerror("Trạng thái","   Không thành công")  
         elif self.status == ERROR:
             return
   
@@ -630,16 +666,17 @@ class QueryGoldForm:
         value = self.my_tree.item(selected,'values')
         
         self.chart_name = value[0]
-        self.search_button['state'] = "disabled"
+        
         
         """Tạo yêu cầu gửi tới server và trả về trạng thái,giá trị cột ngày, và 2 giá trị giá mua và giá bán theo từng ngày"""
         self.status,self.valid_date,self.buy,self.sell  = self.client.get_chart_value_from_server(self.chart_name)
         
     """Mở đồ thị giá vàng"""
     def open_chart_window(self,event=None):
+        self.search_button['state'] = 'normal'
         if self.status == ERROR:
             return        
-        self.search_button['state'] = 'normal'
+        
          
         self.valid_date = [datetime.strptime(item,"%d/%m/%Y") for item in self.valid_date]
         self.buy = [int(item.replace(",","")) for item in self.buy]
@@ -694,6 +731,9 @@ class QueryGoldForm:
         plt.show()
 
     def chart_button_clicked(self,event = None):
+        region = self.my_tree.identify("region", event.x, event.y)
+        if region == "heading":
+            return
         self.flag = 1
         self.start_progress_bar()
     
@@ -704,7 +744,7 @@ class QueryGoldForm:
         self.start_progress_bar()
         
     def exit_button_clicked(self):
-        ask = messagebox.askyesno("Status","   Exit Now?   ",parent = self.root)
+        ask = messagebox.askyesno("Trạng thái","    Thoát ngay?   ",parent = self.root)
         if ask == 0:
             return
         else:
@@ -878,24 +918,24 @@ class SignUpForm:
 
     def checkInput(self,username,password, re_enter_password):
         if password == "" or username == "" or re_enter_password =="":
-            messagebox.showwarning("Warning","Please enter both of field")
+            messagebox.showwarning("Cảnh báo","Hãy điền đầy đủ các ô")
             return False
         msg = "Valid"
         if len(password) < 8:
-            msg = "Password must be at least 8 characters contain"
+            msg = "Mật khẩu phải từ 8 kí tự trở lên"
         elif re.search('[0-9]',password) is None:
-            msg = "Make sure your password has a number in it"
+            msg = "Mật khẩu phải chứa ít nhất 1 chữ số"
         elif re.search('[A-Z]',password) is None:
-            msg = "Make sure your password has a capital letter in it"
+            msg = "Mật khẩu phải chứa ít nhất 1 kí tự viết hoa"
         
         if re_enter_password:
             if password != re_enter_password:
-                messagebox.showwarning("Warning","Password does not match")
+                messagebox.showwarning("Cảnh báo","Mật khẩu không khớp")
                 return False
         if msg == "Valid":
             return True       
         else:
-            messagebox.showwarning("Invalid Password",msg)
+            messagebox.showwarning("Cảnh báo",msg)
             return False    
     
     def sign_up_button_clicked(self):
@@ -905,15 +945,15 @@ class SignUpForm:
         if self.checkInput(username,password,re_enter_password):
             status = self.client.register(username,password)
             if status == ALREADY_EXIT:
-                messagebox.showwarning("Status","The username is already taken")
+                messagebox.showwarning("Cảnh báo","Tài khoản đã tồn tại")
             elif status == SIGN_UP_SUCCESS:
-                messagebox.showinfo("Status","Sign up successfully")
+                messagebox.showinfo("Trạng thái","Đăng kí thành công")
                 self.login_form = LoginForm(self.app)
             elif status == ERROR:
                 return
             
     def exit_button_clicked(self):
-        ask = messagebox.askyesno("Status","   Exit Now?   ",parent = self.root)
+        ask = messagebox.askyesno("Trạng thái","   Thoát ngay?   ",parent = self.root)
         if ask == 0:
             return
         else:
@@ -1067,7 +1107,6 @@ class LoginForm:
             height = 24)
        
     def show_and_hide_password(self,even = None,*args,**kwargs):
-        
         for entry in kwargs["entry"]:
             if entry['show'] == "*":
                 kwargs["button"].config(image = HIDE_IMG)
@@ -1078,22 +1117,22 @@ class LoginForm:
                 
     def checkInput(self,username,password):
         if password == "" or username == "":
-            messagebox.showwarning("Warning","Please enter both of field")
+            messagebox.showwarning("Cảnh báo","Hãy điền đầy đủ các ô")
             return False
         
-        msg = "Valid Password"
+        msg = "Valid"
         if len(password) < 8:
-            msg = "Password must be at least 8 characters contain"
+            msg = "Mật khẩu phải từ 8 kí tự trở lên"
         elif re.search('[0-9]',password) is None:
-            msg = "Make sure your password has a number in it"
+            msg = "Mật khẩu phải chứa ít nhất 1 chữ số"
         elif re.search('[A-Z]',password) is None:
-            msg = "Make sure your password has a capital letter in it"
+            msg = "Mật khẩu phải chứa ít nhất 1 kí tự viết hoa"
         
-        if msg == "Valid Password":
+        if msg == "Valid":
             return True       
         else:
-            messagebox.showwarning("Invalid Password",msg)
-            return False  
+            messagebox.showwarning("Cảnh báo",msg)
+            return False     
     
     def create_account_button_clicked(self,Even = None):
         self.register = SignUpForm(self.app)
@@ -1102,19 +1141,19 @@ class LoginForm:
         if self.checkInput(self.username.get(), self.password.get()):
             status = self.client.login(self.username.get(),self.password.get())
             if status == LOGIN_MSG_SUCCESS:
-                messagebox.showinfo("Status",LOGIN_MSG_SUCCESS)
+                messagebox.showinfo("Trạng thái","Đăng nhập thành công")
                 self.query_gold_form = QueryGoldForm(self.app)
             elif status == ALREADY_LOGGED:
-                messagebox.showwarning("Status",ALREADY_LOGGED + "\nPlease use another account")
+                messagebox.showwarning("Trạng thái","Tài khoản đã đăng nhập\nHãy dùng tài khoản khác")
             elif status == WRONG_PASSWORD:
-                messagebox.showerror("Status" , WRONG_PASSWORD) 
+                messagebox.showerror("Trạng thái" , "Tài khoản hoặc mật khẩu không đúng") 
             elif status == NOT_SIGN_UP:
-                messagebox.showwarning("Status" , "Your account is not exists" )
+                messagebox.showwarning("Trạng thái" , "Tài khoản không tồn tại" )
             elif status == ERROR:
                 return        
         
     def exit_button_clicked(self):
-        ask = messagebox.askyesno("Status","   Exit Now?   ",parent = self.root)
+        ask = messagebox.askyesno("Trạng thái","   Thoát ngay?   ",parent = self.root)
         if ask == 0:
             return
         else:
@@ -1259,17 +1298,15 @@ class InputHostIp(tk.Frame):
             width = 24,
             height = 24)
     
-    
-    
     def connect_button_clicked(self,event = None):
         HOST_IP = self.host_input_field.get()
         if HOST_IP == "":
-            messagebox.showwarning("Warning","Please input the field")
+            messagebox.showwarning("Cảnh báo","Hãy điền vào ô")
             return
 
         HOST_IP_PREFIX = HOST_IP.split('.')
         if len(HOST_IP_PREFIX) < 4 or len(HOST_IP_PREFIX) > 4:
-            messagebox.showerror("Error","Not a IP-v4 prefix")
+            messagebox.showerror("Lỗi","Không phải IPv4")
             return 
         else:
             for Val in HOST_IP_PREFIX:
@@ -1278,15 +1315,15 @@ class InputHostIp(tk.Frame):
                     if Val > 255:
                         raise ValueError
                 except ValueError:
-                    messagebox.showerror("Error","Not a IP-v4 prefix")
+                    messagebox.showerror("Lỗi","Không phải IPv4")
                     return 
                 
         
         if self.client.start_connections(HOST_IP) == True:
-            messagebox.showinfo("Status", f"Connected to {HOST_IP}")
+            messagebox.showinfo("Trạng thái", f"Đã kết nối tới {HOST_IP}")
             self.login = LoginForm(self.app)
         else:
-            messagebox.showerror("Status", "Can't connect to server")
+            messagebox.showerror("Trạng thái", "Không thể kết nối đến server")
         
     def exit_button_clicked(self):
         self.root.destroy()
@@ -1296,6 +1333,7 @@ class ClientApplication(tk.Frame):
     def __init__(self,master,*args,**kwargs):
         self.z = 0
         self.client = SocketClient()
+        self.client.set_GUI(master)
         self.root = master
         
         self.root.configure(bg = "#3a7ff6")
@@ -1308,6 +1346,7 @@ class ClientApplication(tk.Frame):
         
         Tk.move_window(self.root)
         self.input_host = InputHostIp(self)
+       
         
     def minimizeGUI(self):
         self.root.state('withdrawn')
@@ -1331,13 +1370,9 @@ class ClientApplication(tk.Frame):
         del self.root
         del self.input_host
     
-
-   
 """Lấy đường dẫn của chương trình"""
 DIR = os.path.dirname(__file__)
 PATH_IMG = f"{DIR}/Images/"
-
-
 
 if __name__ == "__main__":
     root = tk.Tk()
@@ -1361,8 +1396,7 @@ if __name__ == "__main__":
         SEARCH_BUTTON_IMG = ImageTk.PhotoImage(file= f"{PATH_IMG}Search_button.png")
         MINIMIZE_IMG = ImageTk.PhotoImage(file= f"{PATH_IMG}Minimize.png")
     except:
-        messagebox.showerror("Can run application","   Missing some resource   ")
+        messagebox.showerror("Lỗi","   Thiếu file   ")
     app = ClientApplication(root)
-    # app = LoadingScreen(root)
     root.mainloop()
     
