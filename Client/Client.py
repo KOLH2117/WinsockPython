@@ -37,6 +37,13 @@ FOUND = "!FOUND"
 NOT_FOUND = "!NOT FOUND"
 DONE = "!DONE"
 ERROR = "!ERROR"
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 class JustifyApp:
     """Hàm căn giữa chỉnh màn hình"""
@@ -150,7 +157,6 @@ class LoadingScreen():
             self.master.deiconify()
          
     def master_exit(self):
-        self.master.destroy()
         os._exit(1)
         
 class SocketClient:
@@ -812,7 +818,6 @@ class SignUpForm:
             highlightthickness = 0,
             show = "*")
         self.password.delete(0,'end')
-        self.password.bind("<Return>",self.sign_up_button_clicked)
         self.password.place(
             x = 191.0+2, y = 125+22,
             width = 217.0,
@@ -828,6 +833,7 @@ class SignUpForm:
             highlightthickness = 0,
             show="*")
         self.re_enter_password.delete(0,'end')
+        self.password.bind("<Return>",self.sign_up_button_clicked)
         self.re_enter_password.bind("<Return>",self.sign_up_button_clicked)
         self.re_enter_password.place(
             x = 191.0+2, y = 186+22,
@@ -1370,9 +1376,14 @@ class ClientApplication(tk.Frame):
         del self.root
         del self.input_host
     
-"""Lấy đường dẫn của chương trình"""
-DIR = os.path.dirname(__file__)
-PATH_IMG = f"{DIR}/Images/"
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+PATH_IMG = resource_path("Images") + "\\"
 
 if __name__ == "__main__":
     root = tk.Tk()

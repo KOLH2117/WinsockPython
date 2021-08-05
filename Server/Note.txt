@@ -1,0 +1,1 @@
+("Resources/Images","Images"),("Resources/Server Database","Server Database")

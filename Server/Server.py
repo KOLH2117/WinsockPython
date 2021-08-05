@@ -13,8 +13,7 @@ import sys
 import os
 
 DIR = os.path.dirname(__file__)
-USER_DATABASE_PATH = DIR + "\\Server Database\\database.db"
-GOLDS_DATABASE_PATH = DIR + "\\Server Database\\Golds.db"
+
 
 HEADER = 64
 HOST = socket.gethostbyname(socket.gethostname())
@@ -42,10 +41,18 @@ NOT_FOUND = "!NOT FOUND"
 DONE = "!DONE"
 ERROR = "!ERROR"
 
-"""Nếu đường dẫn không tồn tại thì tạo đường dẫn"""
-if not os.path.exists('Server Database'):
-    os.makedirs('Server Database')
- 
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+ICON = resource_path('Images\Server.ico')
+USER_DATABASE_PATH =  resource_path("Server Database\database.db")
+GOLDS_DATABASE_PATH =  resource_path("Server Database\Golds.db")
+
 class ThirdPartyServerData:
     def __init__(self):
         return
@@ -624,9 +631,7 @@ class MainPage:
         self.root = app.root
         self.root.title("SERVER")
 
-        DIR = os.getcwd()
-        PATH_IMG = f"{DIR}/Images/"
-        self.root.iconbitmap(f"{PATH_IMG}Server.ico")
+        self.root.iconbitmap(f"{ICON}")
 
         self.app_height = 400
         self.app_width = 621
@@ -645,8 +650,6 @@ class MainPage:
         self.quit_but = tk.Button(self.root,text = "Quit",width = 30,command = self.on_closing)
         self.quit_but.pack(pady = (10,10))
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-                
-        
     
     def insert_to_text_box(self,msg):
         self.status_list.insert(tk.END,msg)
