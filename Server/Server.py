@@ -1,312 +1,36 @@
-import re
+"""Module có sẵn"""
+from GetThirdPartyData import ThirdPartyServerData
 import socket
 import threading
 import tkinter as tk
 from tkinter import messagebox
-import sqlite3
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime,timedelta
-from fuzzywuzzy import process  
-import time
-import sys
+import json
 import os
+import time
 
-DIR = os.path.dirname(__file__)
+"""Module tự viết"""
+from ServerDatabase import ServerDatabase
+from UI import MainPage
+from Constants import *
 
+"""Nếu như file Server Database chưa được tạo thì sẽ tạo thư mục chứa database"""
+if os.path.exists("Server Database") == False:
+    os.makedirs("Server Database")
 
-HEADER = 64
-HOST = socket.gethostbyname(socket.gethostname())
-PORT = 5050
-ADDR = (HOST,PORT)
-FORMAT = 'utf-8'
-
-CLIENT_DISCONNECT_MSG = "Client has disconnected from server." 
-DISCONNECT_MESSAGE = "!DISCONNECT"
-
-WRONG_PASSWORD = "Login Failed! Username or password is incorrect"
-
-NOT_SIGN_UP = "User is not registered!"
-
-LOGIN = "!LOGIN"
-SIGN_UP = "!SIGN UP"
-ALREADY_LOGGED = "Account has already logged in!"
-LOGIN_MSG_SUCCESS = "Login successful!"
-SIGN_UP_SUCCESS = "Sign up successful!"
-ALREADY_EXIT = "Account has already exited!"
-FAIL = "!FAIL"
-
-FOUND = "!FOUND"
-NOT_FOUND = "!NOT FOUND"
-DONE = "!DONE"
-ERROR = "!ERROR"
-
-def resource_path(relative_path):
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-
-    return os.path.join(base_path, relative_path)
-
-ICON = resource_path('Images\Server.ico')
-USER_DATABASE_PATH =  resource_path("Server Database\database.db")
-GOLDS_DATABASE_PATH =  resource_path("Server Database\Golds.db")
-
-class ThirdPartyServerData:
-    def __init__(self):
-        return
-    
-    """Hàm lấy giá vàng"""
-    def get_gold_list(date):
-        all_golds = {}
-        
-        """Sử dụng thư viện requests để lấy html response"""
-        URL = f"https://tygia.com/api.php?column=0&cols=1&title=1&chart=0&gold=1&rate=0&expand=2&nganhang=VIETCOM&ngay={date}"
-        try:
-            html_text = requests.get(URL).text
-        except:
-            messagebox.showerror("Status","Can't connect to third party server")
-            os._exit(1)
-        soup = BeautifulSoup(html_text,"lxml")
-        
-        try:
-            """Lấy ngày đang tra cứu từ html"""
-            present_day = soup.find("span",id = "datepk1")
-            
-            """Dựa vào class và id để tìm lấy dữ liệu từ html"""
-            list_gold = soup.find_all("tr",class_ = "rmore rmore1")
-            list_gold.append(soup.find("tr",id = "SJCH_Ch_Minh"))
-            list_gold.append(soup.find("tr",id = "SJCH_N_i"))
-            list_gold.append(soup.find("tr", id = "DOJIH_N_iAVPL"))
-            list_gold.append(soup.find("tr", id = "DOJIH_Ch_MinhAVPL"))
-            list_gold.extend(soup.find_all("tr",class_ = "rmore3"))
-            list_gold.extend(soup.find_all("tr",class_ = "rmore4"))
-            list_gold.extend(soup.find_all("tr",class_ = "rmore5"))
-            """Danh sách trả về gồm loại vàng,giá mua,giá bán"""
-            values = []
-            for gold in list_gold:
-                if gold:
-                    """Tìm đến thẻ chứa loại vàng"""
-                    name = gold.find("td",class_ = "c1 text-left")
-                    
-                    """Tìm đến thẻ chứa giá mua"""
-                    buy = name.find_next("td")
-                    
-                    """Nếu tồn tại thì trích xuất giá mua ra"""
-                    if buy.find_all('div'):
-                        buy_price = buy.div.div.span.text
-                    else:
-                        """Nếu không có thẻ mua thì cho nó bằng 0"""
-                        buy_price = "0"
-                    
-                    """Tìm đến thẻ chứa giá mua"""
-                    sell = buy.find_next("td")
-                    
-                    """Nếu tồn tại thì trích xuất giá mua ra"""
-                    if sell.find_all('div'):
-                        sell_price = sell.div.div.span.text
-                    else:
-                        """Nếu không có thẻ mua thì cho nó bằng 0"""
-                        sell_price = "0"
-                    
-                    """Xoá khoảng trắn thừa trong loại vàng"""
-                    name = " ".join(name.text.split())
-                    
-                    
-                    """Trường hợp đặc biệt đối với Mi Hồng 950 third party bị lộn giá mua với giá bán"""
-                    """Đã kiểm chứng với nhiều trang lấy giá vàng khác"""
-                    if gold['id'] != "1OTHERMi_H_ng_950SJC":
-                        values.append({
-                                    "name" : name,
-                                    "buy" : buy_price, 
-                                    "sell" : sell_price}
-                                    )
-                    else:
-                        values.append({
-                                    "name" : name,
-                                    "buy" : sell_price, 
-                                    "sell" : buy_price}
-                                    )
-            """Trả về dạng dict với key là ngày tra"""
-            all_golds[present_day.text] = values 
-            return all_golds
-        except:
-            return None
-
-class ServerDatabase:
-    def __init__(self):
-        self.setup_database()
-        threading.Thread(target = self.update_datebase_30min_per_day,daemon= True).start()
-            
-    """Chuẩn bị cơ sở dữ liệu"""
-    def setup_database(self):
-        """Kết nối đến database"""
-        with sqlite3.connect(USER_DATABASE_PATH,check_same_thread=False) as conn:
-            cursor = conn.cursor()
-            """Tạo bảng dữ liệu người dùng nếu chưa tồn tại"""
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    userID INTEGER PRIMARY KEY,
-                    username VARCHAR(20) NOT NULL,
-                    password VARCHAR(20) NOT NULL
-                )           
-            """)
-            
-            conn.commit()
-    
-    """Hàm tìm dữ liệu người dùng trong cơ sở dữ liệu"""
-    def find_user_info(username):
-        with sqlite3.connect(USER_DATABASE_PATH,check_same_thread = False) as conn:
-            cursor = conn.cursor()
-            find_user = ("SELECT * FROM users WHERE username = ?")
-            cursor.execute(find_user,[username])
-            result =  cursor.fetchall()
-        
-        return result
-
-    """Hàm nhập dữ liệu người dùng vào cơ sở dữ liệu"""
-    def insert_user(username,password):
-        with sqlite3.connect(USER_DATABASE_PATH,check_same_thread = False) as conn:
-            cursor = conn.cursor()
-            insert_user = ("""INSERT INTO users (username,password) VALUES (?, ?)""")
-            cursor.execute(insert_user,[(username),(password)])
-            conn.commit()
-            
-    """Hàm cập nhật dữ liệu từ third party 30 phút 1 lần"""
-    def update_datebase_30min_per_day(self,date = datetime.now()):
-        date = date.strftime("%Y%m%d")
-        while True:
-            with sqlite3.connect(GOLDS_DATABASE_PATH,check_same_thread = False) as conn:
-                cursor = conn.cursor()    
-                """Lấy dữ liệu từ third party về"""
-                golds = ThirdPartyServerData.get_gold_list(date)
-                
-                for table_name, values in golds.items():
-                    listOfTables = cursor.execute(f"""SELECT name FROM sqlite_master WHERE type='table'
-                                        AND name='{table_name}';""").fetchall()
-                    if listOfTables == []:
-                        cursor.execute(f"""CREATE TABLE '{table_name}'(
-                            NAME VARCHAR(20) PRIMARY KEY,
-                            BUY VARCHAR(20),
-                            SELL VARCHAR(20))
-                            """)
-                        for value in values:
-                            name = value['name']
-                            buy = value['buy']
-                            sell = value["sell"]
-                            cursor.execute(f"""INSERT INTO '{table_name}' VALUES(?,?,?)""",[name,buy,sell])
-                    else:
-                        for value in values:
-                            name = value['name']
-                            buy = value['buy']
-                            sell = value["sell"]
-                            cursor.execute(f"""UPDATE '{table_name}' SET BUY = ?,SELL = ? WHERE NAME = ?""",[buy,sell,name])
-                conn.commit()
-                
-            min = 30
-            time.sleep(min*60)
-
-    """Hàm tìm dữ liệu giá vàng trong database tìm gần đúng tên"""
-    def find_approximate_from_database(name, date):
-        results = []
-        with sqlite3.connect(GOLDS_DATABASE_PATH,check_same_thread = False) as conn:
-            cursor = conn.cursor()
-            values = cursor.execute(f"""SELECT * FROM '{date}'""").fetchall()
-            if not values:
-                return results
-            list_of_name = [gold[0] for gold in values]
-            """Tìm tên gần đúng nhất với tên người dùng đang tìm"""
-            the_most_close = process.extractOne(name,list_of_name)
-            
-            """Nếu độ chính xác hơn 95% thì trả về giá vàng của loại đó"""
-            if the_most_close[1] >= 95:
-                values = cursor.execute(f"""SELECT * FROM "{date}" WHERE NAME = ?""",[the_most_close[0]])
-                results.extend(values.fetchall())
-            else:
-                """Nếu độ chính xác bé hơn 95% thì trả về 1 danh sách giá vàng của các loại gần đúng với độ chính xác hơn 80%"""
-                list_of_name = process.extractWithoutOrder(name,list_of_name)
-                list_of_name = [item[0] for item in list_of_name if item[1] >= 80]
-                
-                for name_str in list_of_name:
-                    cursor.execute(f"""SELECT * FROM "{date}" WHERE NAME = ?""",[name_str])
-                    results.extend(cursor.fetchall())
-                    
-        return results
-
-    """Hàm tạo bảng dữ liệu"""
-    def create_table_to_gold_database(date):  
-        golds = ThirdPartyServerData.get_gold_list(date)
-        if golds == None:
-            return False
-        with sqlite3.connect(GOLDS_DATABASE_PATH,check_same_thread = False) as conn:
-            cursor = conn.cursor()
-            for table_name, values in golds.items():
-                cursor.execute(f"""CREATE TABLE IF NOT EXISTS '{table_name}' (
-                        NAME VARCHAR(20) PRIMARY KEY,
-                        BUY VARCHAR(20),
-                        SELL VARCHAR(20))
-                            """)
-                for item in values:
-                    name = item['name']
-                    buy = item['buy']
-                    sell = item['sell']
-                    cursor.execute(f"""INSERT INTO '{table_name}' VALUES (?,?,?)""",[name,buy,sell])
-                
-            conn.commit()
-            return True
-        
-    def query_from_database(name,date):
-        date_format = datetime.strptime(date,"%Y%m%d").strftime("%#d/%#m/%Y")
-        if ServerDatabase.check_gold_table_exists(date_format) == False:
-            if ServerDatabase.create_table_to_gold_database(date) == False:
-                return None
-        results =  ServerDatabase.find_approximate_from_database(name,date_format)
-        return results
-    
-    def check_gold_table_exists(table_name):
-        with sqlite3.connect(GOLDS_DATABASE_PATH,check_same_thread = False) as conn:
-            cur = conn.cursor()
-            find_table = cur.execute(f"""SELECT name FROM sqlite_master WHERE type='table' AND name= '{table_name}'""").fetchall()
-        if find_table == []:
-            return False
-        return True
-    
-    def query_from_database_15_days_before(name,date):
-        date_time = datetime.strptime(date,"%Y%m%d")
-        pre_15_day = date_time - timedelta(days=15)
-        buy = []
-        sell = []
-        valid_days = []
-        while pre_15_day <= date_time:
-            date = pre_15_day.strftime("%Y%m%d")
-            date_format = pre_15_day.strftime("%#d/%#m/%Y")
-            if ServerDatabase.check_gold_table_exists(date_format) == False:
-                if ServerDatabase.create_table_to_gold_database(date) == False:
-                    continue
-            result = ServerDatabase.find_approximate_from_database(name,date_format)
-            if result:
-                valid_days.append(date_format)
-                for item in result:
-                    buy.append(item[1])
-                    sell.append(item[2])
-            pre_15_day += timedelta(days=1)
-        
-        return valid_days,buy,sell
-
+"""Đối tượng socket server của chương trình"""
 class SocketServer:
-    def __init__(self,app):
-        self.flag = True
-        self.last_query_date = None
+    def __init__(self):
+        """Khởi tạo"""        
         self.clients = {}
         self.addresses = {}
-        self.app = app.main_page
         self.receive_q = []
-        self.create_server()
-        self.start_server()
+    
+    """Setter của đối tượng"""
+    def set_gui(self,master):
+        self.app = master
     
     """Gửi dữ liệu đến client theo format gửi độ dài rồi gửi nội dung"""
-    def send(self,client,msg):
+    def sendMsg(self,client,msg):
         message = msg.encode(FORMAT)
         msg_length = len(message)
         send_length = str(msg_length).encode(FORMAT)
@@ -316,55 +40,59 @@ class SocketServer:
             client.send(message)
         except socket.error:
             raise socket.error
-
+    
+    """Hàm gửi 1 list dữ liệu"""
+    def sendList(self,client,list_data):
+        data = json.dumps(list_data)
+        list_len = len(data)
+        send_len = str(list_len).encode(FORMAT)
+        send_len += b' ' * (HEADER - len(send_len))
+        try:
+            client.send(send_len)
+            client.send(data.encode(FORMAT))
+        except socket.error:
+            raise socket.error
+        
     """Nhận dữ liệu từ client"""
-    def recv(self,client): 
+    def receiveMsg(self,client): 
         msg = ""
         try:
             msg_length = client.recv(HEADER).decode(FORMAT)
         except socket.error:
             raise socket.error
         else:   
-            if msg_length:
-                msg_length = int(msg_length)
-                msg = client.recv(msg_length).decode(FORMAT)
-            return msg    
+            try:
+                if msg_length:
+                    msg_length = int(msg_length)
+                    msg = client.recv(msg_length).decode(FORMAT)
+            except socket.error:
+                raise socket.error
+            else:  
+                return msg    
 
+    """Hàm nhận 1 list dữ liệu"""
+    def receiveList(self,client):
+        list_recv = []
+        try:
+            list_length = client.recv(HEADER).decode("utf-8")
+        except socket.error:
+            raise socket.error
+        else:
+            try:
+                if list_length:
+                    list_recv = client.recv(int(list_length)).decode("utf-8")
+                    list_recv = json.loads(list_recv)
+            except socket.error:
+                raise socket.error
+            else:          
+                return list_recv
+           
+    """Tạo socket server"""
     def create_server(self):
         self.SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    
-    def server_re_online(self,client):
-        username = self.recv(client)
-        self.app.insert_to_text_box(f"[SERVER] {username} - Welcome back to Server")
-        self.clients[client] = username
         
-    """Client ngắt kết nối"""
-    def client_disconnect(self,client):
-        self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} disconnected")
-        del self.addresses[client]
-        client.close()
-
-    """Client đăng xuất"""
-    def client_log_out(self,client):
-        self.app.insert_to_text_box(f"[SERVER] {self.clients[client]} log out")
-        
-        del self.clients[client]
-        del self.addresses[client]
-        client.close()
-        
-    """Khi client đột ngột tắt"""
-    def client_crash(self,client):
-        if client in self.clients:
-            self.app.insert_to_text_box(f"[SERVER] User {self.clients[client]} crash ")
-            del self.clients[client]
-        else:
-            self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} crash ")
-            del self.addresses[client]  
-        client.close() 
-         
     """Xử lí yêu cầu người dùng"""    
     def handle_client(self,client):
-        global server_disconnect_flag
         last_client_IP = client
         login_status = False
         connected = True
@@ -373,111 +101,130 @@ class SocketServer:
             try:
                 """Lắng nghe và gửi thông báo điến client liên tục"""
                 if stop_receive == False:
-                    self.send(client,"PACKET")
-                    msg = self.recv(client)
-                    """Nếu client có tín hiệu cần gửi thông tin đế server thì dừng quá trình này"""
+                    self.sendMsg(client,"PACKET")
+                    msg = self.receiveMsg(client)
+                    
                     if msg == ALREADY_LOGGED:
                         login_status = True
                         self.server_re_online(client)
                     elif msg == "STOP_FROM_CLIENT":
+                        """Nếu client có tín hiệu cần gửi thông tin đế server thì dừng quá trình này"""
                         stop_receive = True  
-                        self.send(client,"STOP_FROM_SERVER") 
+                        self.sendMsg(client,"STOP_FROM_SERVER") 
                     elif msg == DISCONNECT_MESSAGE:
                         self.client_disconnect(client)
                         break
                 else:
                     """Trạng thái đăng nhập = False là chưa đăng nhập vào server"""
                     if login_status == False:
-                        try:
-                            msg = self.recv(client)
-                        except socket.error as e:
-                            self.client_crash(last_client_IP)
-                            break
-                        else:
-                            if msg == DISCONNECT_MESSAGE:
-                                self.client_disconnect(client)
-                                connected = False
-                            elif msg == "Login":
-                                if self.log_in(client) == True:
-                                    login_status = True
-                            else:
-                                self.register(client) 
-                            stop_receive = False
+                        msg = self.receiveMsg(client)
+                       
+                        if msg == LOGIN:
+                            if self.log_in(client) == True:
+                                login_status = True
+                        elif msg == SIGN_UP:
+                            self.register(client) 
+                        elif msg == DISCONNECT_MESSAGE:
+                            self.client_disconnect(client)
+                            connected = False
+                        stop_receive = False
                     else:
                         """Đăng nhập thành công thì client mới có quyền tra cứu"""
-                        try:
-                            msg = self.recv(client)
-                        except socket.error as e:
-                            self.client_crash(last_client_IP)
-                        else:
-                            if msg == "QUERY":
-                                self.receive_client_query(client)
-                            elif msg == "CHART":
-                                self.send_charts_data(client)
-                            elif msg == DISCONNECT_MESSAGE:
-                                self.client_log_out(client)
-                                connected = False
-                            stop_receive = False
+                        msg = self.receiveMsg(client)
+                        if msg == QUERY:
+                            self.receive_client_query(client)
+                        elif msg == CHART:
+                            self.send_charts_data(client)
+                        elif msg == DISCONNECT_MESSAGE:
+                            self.client_log_out(client)
+                            connected = False
+                        stop_receive = False
+                       
             except socket.error:
-                self.client_crash(last_client_IP)   
+                """Trong quá trình truyền nếu client bị mất kết nối đột ngột """
+                """thì xoá client đó bắt client đó kết nối lại"""
+                self.client_crash(last_client_IP)
+                
+                connected = False #Phá vòng lập không còn kết nối nữa  
                 break
+           
             """Tín hiệu để phá vòng lập và gửi thông báo server ngừng kết nối đến các client"""
-            if server_disconnect_flag:
+            """Lấy từ đối tượng UI khi người dùng ấn quit"""
+            if self.app.get_disconnect_flag():
                 break
+        
         """Khi mà server còn đang kết nối đến client thì gửi tín hiệu ngừng kết nối"""
         if connected:
-            self.send(client,DISCONNECT_MESSAGE)
+            self.sendMsg(client,DISCONNECT_MESSAGE)
         
-               
-       
     """Chờ các client khác kết nối"""
     def accept_incoming_connections(self):
+        """Luôn lặp lại"""
         while True:
             try:
+                """Chấp nhận 1 kết nối từ client"""
                 client, client_address = self.SERVER.accept()
             except socket.error:
-                break
+                """Nếu client đó kết nối bị lỗi thì thử lại"""
+                continue
             else:
+                """Client kết nối thành công"""
                 self.app.insert_to_text_box(f"[SERVER] {client_address} has connected.")
+                
+                """Lưu địa chỉ vào biến"""
                 self.addresses[client] = client_address
+                
+                """Bắt đầu luồng để xử lí yêu cầu của client"""
                 threading.Thread(target=self.handle_client, args=(client,)).start() 
     
     """Chạy server"""
     def start_server(self):
+        self.create_server()
         try:
             self.SERVER.bind(ADDR) #Bind server trên địa chỉ ADDR 
             self.SERVER.listen(5)
         except socket.error:
+            """Nếu không mở được server thì trả về lỗi rồi đóng server ngay lập tức"""
             messagebox.showerror("Error","  Can't start server")
             os._exit(1)
         else:
+            """Mở server thành công thì sẽ mở luồng đợi các kết nối của client"""
             self.app.insert_to_text_box(f"Waiting for connection at {HOST}...")
+           
+            """Luồng đợi các kết nối từ client"""
             ACCEPT_THREAD = threading.Thread(target=self.accept_incoming_connections)
             ACCEPT_THREAD.start()
     
     """Người dùng đăng kí"""
     def register(self,client):
         try:    
-            username = self.recv(client)
-            password = self.recv(client)
-        except socket.error as e:
-            self.client_crash(client)
-        else:
+            info = self.receiveList(client)
+            username = info[0]
+            password = info[1]
+        
+            """Kiểm tra xem trong database có dữ liệu người dùng hay chưa"""
             result = ServerDatabase.find_user_info(username)
             
             if result:
-                self.send(client,ALREADY_EXIT)
+                """Nếu có thì đăng kí thất bại"""
+                self.sendMsg(client,ALREADY_EXIT)
                 self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} sign up failed")
             else:
-                self.send(client,SIGN_UP_SUCCESS)
-                ServerDatabase.insert_user(username,password)
+                """Nếu không tồn tại thì đăng kí thành công"""
+                self.sendMsg(client,SIGN_UP_SUCCESS)
                 self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} sign up successfully")
-
+                
+                """Lưu vào database"""
+                ServerDatabase.insert_user(username,password)
+        except socket.error:
+            raise socket.error
+        
     """Người dùng đăng nhập"""
     def log_in(self,client):
         try:    
-            username = self.recv(client)
-            password = self.recv(client)
+            info = self.receiveList(client)
+            username = info[0]
+            password = info[1]
       
             """Tìm người dùng trong cơ sở dữ liệu"""
             result = ServerDatabase.find_user_info(username)
@@ -493,184 +240,146 @@ class SocketServer:
                             if user == username:
                                 """Nếu đăng nhập rồi thì trả về False kèm thông báo"""
                                 self.app.insert_to_text_box(f"[SERVER] {username} has already logged in")
-                                self.send(client,ALREADY_LOGGED)
+                                self.sendMsg(client,ALREADY_LOGGED)
                                 return False
                             else:
                                 """Nếu chưa đăng nhập và mật khẩu đúng thì trả về True kèm thông báo"""
                                 self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} has logged in successfully")
                                 self.app.insert_to_text_box(f"[SERVER] {username} - Welcome to Server")
-                                self.send(client,LOGIN_MSG_SUCCESS) 
+                                self.sendMsg(client,LOGIN_MSG_SUCCESS)
+                                self.send_name_of_golds(client)
                                 self.clients[client] = username
                                 return True
                     else:
                         """Nếu chưa có người dùng nào đăng nhập và mật khẩu đúng thì trả về True kèm thông báo"""
                         self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} has logged in successfully")
                         self.app.insert_to_text_box(f"[SERVER] {username} - Welcome to Server")
-                        self.send(client,LOGIN_MSG_SUCCESS) 
+                        self.sendMsg(client,LOGIN_MSG_SUCCESS) 
+                        self.send_name_of_golds(client)
                         self.clients[client] = username
                         return True
                 else:
                     """Nếu mật khẩu sai thì trả về False kèm thông báo"""
                     self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} logged in failed")
-                    self.send(client,WRONG_PASSWORD)
+                    self.sendMsg(client,WRONG_PASSWORD)
                     return False
             else:
                 """Nếu chưa đăng ký thì trả về False kèm thông báo"""
                 self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} logged in failed")
-                self.send(client,NOT_SIGN_UP)
+                self.sendMsg(client,NOT_SIGN_UP)
                 return False
-        except socket.error as e:
-            self.client_crash(client) 
+        except socket.error:
+            raise socket.error
 
+
+    """Người dùng tra giá vàng"""
     def receive_client_query(self,client):
         try:
             self.app.insert_to_text_box(f"[SERVER] {self.clients[client]} just make a search request")
-            name = self.recv(client)
-            date = self.recv(client)
+            info = self.receiveList(client)
+            name = info[0]
+            date = info[1]
+            
             results = ServerDatabase.query_from_database(name,date)
               
             if results:
                 self.last_query_date = date
-                self.send(client,FOUND)
-               
-                self.send(client,str(len(results)))
-                for item in results:
-                    self.send(client,item[0])
-                    self.send(client,item[1])
-                    self.send(client,item[2])
-                self.send(client,DONE)
+                self.sendMsg(client,FOUND)
+                self.sendList(client,results)
+                self.sendMsg(client,DONE)
                 self.app.insert_to_text_box(f"[SERVER] Send results to {self.clients[client]} successfully")
             else:
                 self.app.insert_to_text_box(f"[SERVER] Send no results to {self.clients[client]}")
-                self.send(client,NOT_FOUND)
+                self.sendMsg(client,NOT_FOUND)
         except socket.error:
-            self.client_crash(client)
-        
+            raise socket.error
+    
+    """Gửi dữ liệu của đồ thị qua cho client"""
     def send_charts_data(self,client):
         try:
-            name = self.recv(client)
-            date = self.last_query_date
-            valid_days,buy,sell = ServerDatabase.query_from_database_15_days_before(name,date)
-            self.send(client,str(len(valid_days)))
-            for item in valid_days:
-                self.send(client,item)
-            for item in buy:
-                self.send(client,item)
-            for item in sell:
-                self.send(client,item)
-            self.send(client,DONE)
-        except socket.error:
-            self.client_crash(client)
-
-
-def center(master,app_width,app_height):
-    SCREEN_HEIGHT = master.winfo_screenheight()
-    SCREEN_WIDTH = master.winfo_screenwidth()
-    
-    x = (SCREEN_WIDTH/2) - (app_width/2)  
-    y = (SCREEN_HEIGHT/2) - (app_height/2)
-    
-    master.geometry(f"{app_width}x{app_height}+{int(x)}+{int(y)}")   
-            
-class LoadingScreen():
-    def __init__(self,master,*args,**kwargs):
-        if "time_live" in kwargs:
-            self.time_live = kwargs.get("time_live")
-        else:
-            self.time_live = 5
-        self.root = tk.Toplevel(master)
-        self.master = master
-        self.master.withdraw()
-        self.app_width = 350
-        self.app_height = 80
-        self.root.resizable(False, False)
-        """Căn thanh loading giữa màn hình"""
-        center(self.root,self.app_width,self.app_height)
-        self.root.wm_attributes("-transparentcolor",self.root["bg"])
-        self.root.overrideredirect(1)
-        
-        self.frame = tk.Frame(self.root,width = 200,height = 28)
-        self.frame.place(x = 100,y = 35 )
-        tk.Label(self.frame,text= "Server đang shut down...",fg = "#3a7ff6",font= "Bahnschrift 13").place(x = 0,y=0)
-        for i in range(16):
-            tk.Label(self.root,bg ="#000",width = 2, height = 1).place(x =(i)*22,y = 10)
-
-        self.root.update()
-        self.thread = threading.Thread(target =self.play_animation)
-        self.thread.setDaemon(True)
-        self.thread.start()
-        self.root.after(20, self.check_thread)
-        
-    def play_animation(self): 
-        for i in range(self.time_live):
-            if i != self.time_live - 1:   
-                for j in range(16):
-                    tk.Label(self.root,bg ="#3a7ff6",width = 2, height = 1).place(x =(j)*22,y = 10)
-                    time.sleep(0.06)
-                    self.root.update_idletasks()
-                    tk.Label(self.root,bg ="#000",width = 2, height = 1).place(x =(j)*22,y = 10)
+            info = self.receiveList(client)
+            name = info[0]
+            date = info[1]
+            results = ServerDatabase.query_from_database_15_days_before(name,date)
+            if results:
+                self.sendMsg(client,FOUND)
+                self.sendList(client,results)
+                self.sendMsg(client,DONE)
             else:
-                for j in range(16):
-                    tk.Label(self.root,bg ="#3a7ff6",width = 2, height = 1).place(x =(j)*22,y = 10)
-                    time.sleep(0.06)
-                    self.root.update_idletasks()
-                
-    def check_thread(self):
-        if self.thread.is_alive():
-            self.root.after(20, self.check_thread)
+                self.sendMsg(client,NOT_FOUND)
+        except socket.error:
+            raise socket.error
+    
+    """Gửi list tên các loại vàng"""
+    def send_name_of_golds(self,client): 
+        try:
+            list_name = ServerDatabase.get_name_of_golds()
+            if not list_name:
+                self.sendMsg(client,NOT_FOUND)
+            else:
+                self.sendMsg(client,FOUND)
+                self.sendList(client,list_name)
+        except socket.error:
+            raise socket.error        
+    """Client ngắt kết nối chưa đăng nhập"""
+    def client_disconnect(self,client):
+        self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} disconnected")
+        
+        """Xoá địa chỉ IP đã kết nối đến server"""
+        del self.addresses[client]
+        
+        """Đóng kết nối"""
+        client.close()
+
+    """Client đăng xuất"""
+    def client_log_out(self,client):
+        """Client muốn đóng kết nối khi đã đăng nhập"""
+        self.app.insert_to_text_box(f"[SERVER] {self.clients[client]} log out")
+        
+        """Xoá thông tin người dùng và địa chỉ IP khỏi server"""
+        del self.clients[client]
+        del self.addresses[client]
+        
+        """Đóng socket client"""
+        client.close()
+        
+    """Khi client đột ngột tắt"""
+    def client_crash(self,client):
+        """Nếu client đã đăng nhập thì xoá client trong biến các người dùng đã đăng nhập"""
+        if client in self.clients:
+            self.app.insert_to_text_box(f"[SERVER] User {self.clients[client]} crash ")
+            del self.clients[client]
         else:
-            self.root.destroy() 
-            self.master_exit()
-            
-    def master_exit(self):
-        self.master.destroy()
-        os._exit(1)
-                         
-class MainPage:
-    def __init__(self,app):
-        self.root = app.root
-        self.root.title("SERVER")
-
-        self.root.iconbitmap(f"{ICON}")
-
-        self.app_height = 400
-        self.app_width = 621
-
-        center(self.root,self.app_width,self.app_height)
-
-        self.messages_frame = tk.Frame(self.root)
-        self.scrollbar = tk.Scrollbar(self.messages_frame)
-        self.status_list = tk.Listbox(self.messages_frame,width = 100,height = 22,yscrollcommand=self.scrollbar.set)
-        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.status_list.pack(side=tk.LEFT, fill=tk.BOTH)
-        self.status_list.pack()
-
-        self.messages_frame.pack()
-
-        self.quit_but = tk.Button(self.root,text = "Quit",width = 30,command = self.on_closing)
-        self.quit_but.pack(pady = (10,10))
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-    
-    def insert_to_text_box(self,msg):
-        self.status_list.insert(tk.END,msg)
-    
-    def on_closing(self):
-        global server_disconnect_flag 
-        server_disconnect_flag = True
+            """Chưa đăng nhập thì coi như 1 địa chỉ IP bình thường bị mất kết nối"""
+            self.app.insert_to_text_box(f"[SERVER] {self.addresses[client]} crash ")
+        """Xoá thông tin socket client"""
+        del self.addresses[client]  
         
-        """Giao diện tắt server"""
-        self.loading = LoadingScreen(self.root,time_live = 5)
-        
-server_disconnect_flag = False        
+        """Đóng socket trên đỉa chỉ IP đó"""
+        client.close() 
+    
+    """Server vừa mới mở lại sau khi bị crash"""
+    """Cập nhật các thông tin client đã kết nối trước đó"""
+    def server_re_online(self,client):
+        try:
+            username = self.receiveMsg(client)
+            self.app.insert_to_text_box(f"[SERVER] {username} - Welcome back to Server")
+            self.clients[client] = username
+        except socket.error:
+            raise socket.error  
 
+"""Chương trình socket server"""
 class ServerApplication():
     def __init__(self,master):
+        """Khởi tạo đối tượng"""
         self.root = master
         self.root.resizable(False,False)
-        self.main_page = MainPage(self)
-        self.server = SocketServer(self)
+        self.main_page = MainPage(self.root)
         self.database = ServerDatabase()
-        
+        self.server = SocketServer()
+        self.server.set_gui(self.main_page)
+        self.server.start_server()
+      
 if __name__ == "__main__":
     root = tk.Tk()
     app = ServerApplication(root)
