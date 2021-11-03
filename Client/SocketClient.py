@@ -64,7 +64,7 @@ class SocketClient:
                 
     """Client đang kết nối lại đến server"""
     def client_try_to_reconnect(self):
-        loading = LoadingScreen(self.master, text= "Đang kết nối lại...")
+        loading = LoadingScreen(self.master,text= "Đang kết nối lại...")
         """Đóng rồi tạo lại socket"""
         self.close_client()
         
@@ -98,9 +98,9 @@ class SocketClient:
         
         self.create_socket()
         try:
-            self.client.settimeout(3)
-            self.client.connect(self.ADDR)
-            self.client.settimeout(None)            
+            self.client.settimeout(3) 
+            self.client.connect(self.ADDR) 
+            self.client.settimeout(None)             
         except socket.error as e:
             self.close_client()
             return False
@@ -148,7 +148,7 @@ class SocketClient:
                     """Nếu list đó có dữ liêu thì client ngừng nghe mà bắt đầu gửi yếu cầu"""
                     if len(self.send_q) != 0:
                         """Đây là thông báo cho Server biết là hãy dừng gửi PACKET và nghe yêu cầu"""
-                        ack_msg = "STOP_FROM_CLIENT" 
+                        ack_msg = "STOP_FROM_CLIENT"
                     
                     """Sau khi gửi thông báo STOP_FROM_CLIENT"""
                     """Sẽ nhận lại thông báo từ Server là họ đã nhận được yêu cầu dừng gửi PACKET và lắng nghe yêu cầu của client"""

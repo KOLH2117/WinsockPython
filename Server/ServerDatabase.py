@@ -112,6 +112,7 @@ class ServerDatabase:
             list_of_name = [gold[0] for gold in values] 
             """Tìm tên gần đúng nhất với tên người dùng đang tìm"""
             the_most_close = process.extractOne(name,list_of_name)
+        
             
             """Nếu độ chính xác hơn 95% thì trả về giá vàng của loại đó"""
             if the_most_close[1] >= 95:
@@ -144,7 +145,7 @@ class ServerDatabase:
         
         with sqlite3.connect(GOLDS_DATABASE_PATH,check_same_thread = False) as conn:
             cursor = conn.cursor()
-            for table_name, values in golds.items():
+            for table_name, values in golds.items(): 
                 cursor.execute(f"""CREATE TABLE IF NOT EXISTS '{table_name}' (
                         NAME VARCHAR(20) PRIMARY KEY,
                         BUY VARCHAR(20),
@@ -161,6 +162,7 @@ class ServerDatabase:
     
     """Tìm từ database"""    
     def query_from_database(name,date):
+        
         date_format = datetime.strptime(date,"%Y%m%d").strftime("%#d/%#m/%Y")
         if ServerDatabase.check_gold_table_exists(date_format) == False:
             if ServerDatabase.create_table_in_gold_database(date) == False:

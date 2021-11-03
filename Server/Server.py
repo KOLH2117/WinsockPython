@@ -109,8 +109,8 @@ class SocketServer:
                         self.server_re_online(client)
                     elif msg == "STOP_FROM_CLIENT":
                         """Nếu client có tín hiệu cần gửi thông tin đế server thì dừng quá trình này"""
-                        stop_receive = True  
                         self.sendMsg(client,"STOP_FROM_SERVER") 
+                        stop_receive = True  
                     elif msg == DISCONNECT_MESSAGE:
                         self.client_disconnect(client)
                         break

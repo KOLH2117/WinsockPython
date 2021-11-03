@@ -1107,7 +1107,7 @@ class LoginForm:
        
     """Hàm ẩn hiện mật khẩu"""
     def show_and_hide_password(self,even = None,*args,**kwargs):
-        for entry in kwargs["entry"]:
+        for entry in kwargs["entry"]: 
             if entry['show'] == "*":
                 kwargs["button"].config(image = AppImage.get("HIDE_IMG"))
                 entry.config(show = "")
@@ -1321,7 +1321,7 @@ class InputHostIp(tk.Frame):
             messagebox.showwarning("Cảnh báo","Hãy điền vào ô")
             return False
 
-        HOST_IP_PREFIX = HOST_IP.split('.')
+        HOST_IP_PREFIX = HOST_IP.split('.') 
         if len(HOST_IP_PREFIX) < 4 or len(HOST_IP_PREFIX) > 4:
             messagebox.showerror("Lỗi","Không phải IPv4")
             return False
@@ -1340,7 +1340,7 @@ class InputHostIp(tk.Frame):
         if self.check_IP_prefix() == False:
             return
         HOST_IP = self.host_input_field.get()
-        print(HOST_IP)
+        # print(HOST_IP)
                 
         if self.client.start_connections(HOST_IP) == True:
             messagebox.showinfo("Trạng thái", f"Đã kết nối tới {HOST_IP}")
